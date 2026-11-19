@@ -1,6 +1,6 @@
 ---
 name: clj-replace
-version: 1.0.0
+version: 2.0.0
 description: Use when replacing Clojure or Babashka code but str_replace fails due to formatting differences - matches one form while ignoring only layout (whitespace, commas, line breaks)
 ---
 

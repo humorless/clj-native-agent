@@ -1,6 +1,6 @@
 # clj-replace Changelog
 
-## [Unreleased]
+## [2.0.0] - 2026-11-19
 
 ### Changed (breaking)
 - Forms are compared ignoring layout only (whitespace, indentation, line

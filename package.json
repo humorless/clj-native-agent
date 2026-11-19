@@ -1,6 +1,6 @@
 {
   "name": "clj-native-agent",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "AI-native skills for Clojure development with Coding Agent",
   "author": "Laurence Chen <humorless@gmail.com>",
   "license": "MIT",

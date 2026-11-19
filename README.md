@@ -2,7 +2,7 @@
 
 A collection of specialized Claude Code skills that help AI agents write, debug, and refactor Clojure code efficiently. These skills address the unique challenges of writing and maintaining Clojure in an AI-driven workflow.
 
-> **🎉 Version 1.0.0 Released** — All five skills are now production-ready! See [CHANGELOG](#changelog) for details on the improvements in this release.
+> **Version 2.0.0** — clj-replace now matches forms ignoring layout only, and reports near matches with the file's text. This is a breaking change for clj-replace; the other skills are unchanged. See [CHANGELOG](#changelog).
 
 ## Why These Skills?
 
@@ -146,6 +146,16 @@ These skills follow key principles:
 - **AI-Friendly**: Structured output, consistent interfaces, reduced context overhead
 
 ## Changelog
+
+### 2.0.0 Release (2026-11-19)
+
+- **clj-replace**: [v2.0.0](./skills/clj-replace/CHANGELOG.md) (breaking)
+  - Forms are compared ignoring layout only (whitespace, indentation, line breaks, commas); a different spelling, metadata, `#_` form or comment no longer matches
+  - New exit code 4 (near match) prints the file's exact text to retry with
+  - old-string and new-string must each be one form (new-string may be blank to delete)
+  - Fixes forms with `#()` or `##NaN` never matching (#3) and a crash on `#_` old-strings
+  - Regression suite (`bb test`) and corpus property test (`bb corpus`)
+- clj-debug, clj-discover, clj-refactor, clj-skill-eval: unchanged (1.0.0)
 
 ### 1.0.0 Release (2026-05-29)
 
