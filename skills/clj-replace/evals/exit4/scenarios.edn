@@ -8,7 +8,12 @@
 ;; :near-text    the file's text of the form clj-replace will show
 ;; :first-old / :first-new   what the task tells the agent to try first
 ;; :goal         the change, in words, as given to the agent
-;; :must-contain / :must-not-contain   checks on the final file
+;; :must-contain / :must-not-contain   text checks on the final file, after
+;;               normalising each line (trimmed, inner whitespace runs
+;;               collapsed, blank lines dropped): line breaks still count,
+;;               so a comment moved onto another line fails
+;; :must-contain-squashed   checked with all whitespace collapsed (order,
+;;               not layout)
 ;; :unchanged    text that must still be in the final file verbatim
 
 [{:id :metadata
@@ -19,7 +24,7 @@
   :goal "make parse-port use parse-long instead of Integer/parseInt"
   :must-contain ["^:private" "(parse-long s)"]
   :must-not-contain ["Integer/parseInt"]
-  :unchanged ["(defn port [env]\n  (parse-port (get env \"PORT\" \"8080\")))"]}
+  :unchanged ["(ns app.config)" "(defn port [env]\n  (parse-port (get env \"PORT\" \"8080\")))"]}
 
  {:id :comment
   :file "(ns app.cart)\n\n(defn total\n  \"Sum of item prices.\"\n  [items]\n  ;; prices are stored in cents\n  (reduce + (map :price items)))\n"
@@ -27,9 +32,9 @@
   :first-old "(defn total \"Sum of item prices.\" [items] (reduce + (map :price items)))"
   :first-new "(defn total \"Sum of item prices.\" [items] (transduce (map :price) + items))"
   :goal "make total use transduce instead of reduce over map"
-  :must-contain [";; prices are stored in cents" "(transduce (map :price) + items)"]
+  :must-contain [";; prices are stored in cents\n(transduce (map :price) + items))"]
   :must-not-contain ["(reduce + (map :price items))"]
-  :unchanged ["(ns app.cart)"]}
+  :unchanged ["(ns app.cart)" "\"Sum of item prices.\""]}
 
  {:id :map-order
   :file "(ns app.server)\n\n(def config\n  {:port 8080\n   :host \"localhost\"\n   :join? false})\n\n(defn start [] (run config))\n"
@@ -37,6 +42,6 @@
   :first-old "{:host \"localhost\" :port 8080 :join? false}"
   :first-new "{:host \"0.0.0.0\" :port 8080 :join? false}"
   :goal "make the server listen on host 0.0.0.0 instead of localhost"
-  :must-contain ["{:port 8080\n   :host \"0.0.0.0\"\n   :join? false}"]
+  :must-contain-squashed ["{:port 8080 :host \"0.0.0.0\" :join? false}"]
   :must-not-contain ["\"localhost\""]
-  :unchanged ["(defn start [] (run config))"]}]
+  :unchanged ["(ns app.server)" "(defn start [] (run config))"]}]

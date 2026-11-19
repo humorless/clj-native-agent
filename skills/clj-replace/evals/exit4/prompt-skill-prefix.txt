@@ -1,0 +1,6 @@
+The following skill documentation describes the clj-replace command you will use:
+
+<skill>
+{{skill}}
+</skill>
+
