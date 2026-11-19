@@ -400,7 +400,7 @@
   :file "(defn ^:private f [] 1)\n"
   :old "(defn f [] 1)"
   :new "(defn f [] 2)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(defn \\^:private f \\[\\] 1\\)"}
   :interim {:exit 0 :file "(defn f [] 2)\n"}}
 
  {:id :metadata-ambiguous
@@ -420,7 +420,7 @@
   :file "(def x [1 #_2 3])\n"
   :old "(def x [1 3])"
   :new "(def x [1 3 4])"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def x \\[1 #_2 3\\]\\)"}
   :interim {:exit 0 :file "(def x [1 3 4])\n"}}
 
  {:id :vector-vs-list
@@ -430,7 +430,7 @@
   :file "(let [a 1] a)\n"
   :old "(let (a 1) a)"
   :new "(let [b 1] b)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(let \\[a 1\\] a\\)"}
   :interim {:exit 0 :file "(let [b 1] b)\n"}}
 
  {:id :long-vs-bigint
@@ -440,7 +440,7 @@
   :file "(def a 1N)\n"
   :old "(def a 1)"
   :new "(def a 2)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def a 1N\\)"}
   :interim {:exit 0 :file "(def a 2)\n"}}
 
  ;; --------------------------- false positive: mined from eastwood / splint
@@ -453,7 +453,7 @@
   :file "(def r `require)\n"
   :old "(def r 'require)"
   :new "(def r nil)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def r `require\\)"}
   :interim {:exit 0 :file "(def r nil)\n"}}
 
  {:id :empty-list-vs-vector
@@ -464,7 +464,7 @@
   :file "(def e [])\n"
   :old "(def e ())"
   :new "(def e nil)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def e \\[\\]\\)"}
   :interim {:exit 0 :file "(def e nil)\n"}}
 
  {:id :type-hint-arg
@@ -475,7 +475,7 @@
   :file "(defn f [^File f] f)\n"
   :old "(defn f [f] f)"
   :new "(defn f [g] g)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(defn f \\[\\^File f\\] f\\)"}
   :interim {:exit 0 :file "(defn f [g] g)\n"}}
 
  {:id :type-hint-deref
@@ -486,13 +486,15 @@
   :file "(def c ^Foo @cache)\n"
   :old "(def c @cache)"
   :new "(def c nil)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def c \\^Foo @cache\\)"}
   :interim {:exit 0 :file "(def c nil)\n"}}
 
  ;; ---------------- false positive: same value, different spelling
  ;; Decision 2026-11-19: clj-replace ignores layout only (whitespace,
  ;; commas, line breaks), so a different spelling of the same value is
- ;; no match.
+ ;; no match. When the value is the same, it reports a near match: exit 4
+ ;; with the location and the file's own text, so old-string can be
+ ;; retried with that text.
 
  {:id :map-key-order
   :group :false-positive
@@ -502,7 +504,7 @@
   :file "(def m {:a 1 :b 2})\n"
   :old "(def m {:b 2 :a 1})"
   :new "(def m {})"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def m \\{:a 1 :b 2\\}\\)"}
   :interim {:exit 0 :file "(def m {})\n"}}
 
  {:id :set-order
@@ -513,7 +515,7 @@
   :file "(def s #{'fn 'clojure.core/fn})\n"
   :old "(def s #{'clojure.core/fn 'fn})"
   :new "(def s #{})"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def s #\\{'fn 'clojure\\.core/fn\\}\\)"}
   :interim {:exit 0 :file "(def s #{})\n"}}
 
  {:id :quote-vs-quote-form
@@ -524,7 +526,7 @@
   :file "(def l '(1 2 3))\n"
   :old "(def l (quote (1 2 3)))"
   :new "(def l nil)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def l '\\(1 2 3\\)\\)"}
   :interim {:exit 0 :file "(def l nil)\n"}}
 
  {:id :var-quote-vs-var-form
@@ -534,7 +536,7 @@
   :file "(def v #'a)\n"
   :old "(def v (var a))"
   :new "(def v nil)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def v #'a\\)"}
   :interim {:exit 0 :file "(def v nil)\n"}}
 
  {:id :hex-vs-decimal
@@ -544,7 +546,7 @@
   :file "(def n 0xFF)\n"
   :old "(def n 255)"
   :new "(def n 0)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def n 0xFF\\)"}
   :interim {:exit 0 :file "(def n 0)\n"}}
 
  {:id :radix-vs-decimal
@@ -554,7 +556,7 @@
   :file "(def n 2r1010)\n"
   :old "(def n 10)"
   :new "(def n 0)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def n 2r1010\\)"}
   :interim {:exit 0 :file "(def n 0)\n"}}
 
  {:id :float-spelling
@@ -564,7 +566,7 @@
   :file "(def d 1.0)\n"
   :old "(def d 1.00)"
   :new "(def d 0)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def d 1\\.0\\)"}
   :interim {:exit 0 :file "(def d 0)\n"}}
 
  {:id :string-newline-vs-escape
@@ -574,7 +576,7 @@
   :file "(def s \"a\nb\")\n"
   :old "(def s \"a\\nb\")"
   :new "(def s \"\")"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def s \"a\nb\"\\)"}
   :interim {:exit 0 :file "(def s \"\")\n"}}
 
  {:id :comment-inside
@@ -585,8 +587,18 @@
   :file "(or (keyword? x) ; note\n    (= 1 n))\n"
   :old "(or (keyword? x) (= 1 n))"
   :new "(and a b)"
-  :expect {:exit 2}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or \\(keyword\\? x\\) ; note\n    \\(= 1 n\\)\\)"}
   :interim {:exit 0 :file "(and a b)\n"}}
+
+ {:id :string-inner-whitespace
+  :group :false-positive
+  :known-bug true
+  :desc "whitespace inside a string literal is content: \"a b\" is no match for \"a  b\" (exit 2, not a near match)"
+  :file "(f \"a  b\")\n"
+  :old "(f \"a b\")"
+  :new "(g)"
+  :expect {:exit 2 :output "No matching"}
+  :interim {:exit 4}}
 
  ;; -------------------------------- input: old/new with several forms
 
