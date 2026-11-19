@@ -1,5 +1,17 @@
 {:tasks
- {test {:doc "Run clj-replace regression cases"
+ {:requires ([babashka.fs :as fs])
+
+  test {:doc "Run clj-replace regression cases"
         :task (shell "bb skills/clj-replace/test/run.bb")}
+
+  lint {:doc "clj-kondo (one file at a time: .bb scripts share the user namespace) and cljfmt check"
+        :task (let [files (concat ["bb.edn"]
+                                  (sort (map str (fs/glob "skills/clj-replace" "**.{bb,edn}"))))]
+                (doseq [f files] (shell "clj-kondo --lint" f))
+                (apply shell "cljfmt check" files))}
+
+  bench {:doc "Performance guard: bb bench [--baseline <script>] [--runs N] [--max-slowdown X]"
+         :task (apply shell "bb skills/clj-replace/test/bench.bb" *command-line-args*)}
+
   corpus {:doc "Run the clj-replace corpus property test: bb corpus [--sample N] [--seed S] <dir>..."
           :task (apply shell "bb skills/clj-replace/test/corpus.bb" *command-line-args*)}}}
