@@ -161,6 +161,24 @@ cat evals.json | jq .
 
 ---
 
+## Exit 4 Retry Eval (evals 2-4)
+
+`exit4/` checks the near-match flow end to end with real agents: the first
+call's old-string has the same value as a form in the file but is written
+differently (metadata, an inner comment, map key order), clj-replace answers
+exit 4 with the file's text, and the agent has to retry with that text while
+keeping what the file had.
+
+- `exit4/scenarios.edn`: fixtures, the first call, and the checks on the final file
+- `exit4/clj-replace-logged.bb`: a stand-in for clj-replace.bb that logs every call
+- `exit4/grade.bb`: grades a run from the final file and the call log
+- `exit4/RESULTS.md`: the protocol, the latest results, and how to rerun
+
+Latest run (2026-11-20): 12/12 passed, with and without SKILL.md alike; the
+1.0.0 script fails all three scenarios. See `exit4/RESULTS.md`.
+
+---
+
 ## Understanding evals.json Format
 
 Each evaluation in `evals.json` has:
