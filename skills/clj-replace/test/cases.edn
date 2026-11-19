@@ -558,7 +558,7 @@
   :file "(a)\n(b)\n"
   :old "(a) (c)"
   :new "(x)"
-  :expect {:exit 1 :output "exactly one form"}}
+  :expect {:exit 1 :output "✗ Error: old-string must contain exactly one form \\(found 2 form\\(s\\) and 0 top-level comment\\(s\\)\\)"}}
 
  {:id :multi-form-new
   :group :input
@@ -566,7 +566,7 @@
   :file "(a)\n(b)\n"
   :old "(a)"
   :new "(x) (y)"
-  :expect {:exit 1 :output "exactly one form"}}
+  :expect {:exit 1 :output "✗ Error: new-string must contain exactly one form \\(found 2 form\\(s\\) and 0 top-level comment\\(s\\)\\); use a blank new-string to delete the matched form"}}
 
  {:id :blank-old
   :group :input
@@ -582,7 +582,7 @@
   :file "(a)\n"
   :old "; just a comment"
   :new "(x)"
-  :expect {:exit 1 :output "exactly one form"}}
+  :expect {:exit 1 :output "✗ Error: old-string must contain exactly one form \\(found 0 form\\(s\\) and 1 top-level comment\\(s\\)\\)"}}
 
  {:id :form-plus-comment-old
   :group :input
@@ -590,7 +590,7 @@
   :file "(a) ; why\n(b)\n"
   :old "(a) ; why"
   :new "(x)"
-  :expect {:exit 1 :output "exactly one form"}}
+  :expect {:exit 1 :output "✗ Error: old-string must contain exactly one form \\(found 1 form\\(s\\) and 1 top-level comment\\(s\\)\\)"}}
 
  {:id :blank-new-deletes
   :group :basic
@@ -606,7 +606,7 @@
   :file "(a)\n(b)\n"
   :old "(a)"
   :new "; gone"
-  :expect {:exit 1 :output "exactly one form"}}
+  :expect {:exit 1 :output "✗ Error: new-string must contain exactly one form \\(found 0 form\\(s\\) and 1 top-level comment\\(s\\)\\); use a blank new-string to delete the matched form"}}
 
  {:id :form-plus-comment-new
   :group :input
@@ -866,6 +866,41 @@
   :old "#:c{:b 1}"
   :new "{}"
   :expect {:exit 2}}
+
+ ;; ------------------------------------------- from mutation testing
+ ;; Added for mutants of clj-replace.bb that survived all other cases.
+
+ {:id :near-match-output
+  :group :basic
+  :desc "the full exit 4 message: header, location, the file's text, retry advice"
+  :file "(defn ^:private f [] 1)\n"
+  :old "(defn f [] 1)"
+  :new "(defn f [] 2)"
+  :expect {:exit 4 :output "✗ Error: No exact match in \\S+, but these forms have the same value and differ in spelling, comments or metadata:\n  line 1, column 1:\n\\(defn \\^:private f \\[\\] 1\\)\nRetry with the file's text above as old-string; keep its comments and metadata in new-string if you mean to\\."}}
+
+ {:id :anon-fn-different-value
+  :group :basic
+  :desc "#() forms with different bodies are no match and no near match (exit 2)"
+  :file "(map #(dec %) xs)\n"
+  :old "(map #(inc %) xs)"
+  :new "(map inc xs)"
+  :expect {:exit 2 :output "No matching"}}
+
+ {:id :anon-fn-arg-order-not-near
+  :group :basic
+  :desc "#(+ %2 %1) is not a near match for #(+ %1 %2): renamed gensyms keep argument order"
+  :file "(map #(+ %1 %2) a b)\n"
+  :old "(map #(+ %2 %1) a b)"
+  :new "(map - a b)"
+  :expect {:exit 2 :output "No matching"}}
+
+ {:id :discard-old-not-in-file
+  :group :basic
+  :desc "a #_ old-string that is not in the file is no match; other #_ forms are not near matches"
+  :file "(do #_(bar 1) (baz))\n"
+  :old "#_(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 2 :output "No matching"}}
 
  ;; ------------------------------------------ crash: unguarded old sexpr
 
