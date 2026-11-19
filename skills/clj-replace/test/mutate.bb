@@ -1,7 +1,7 @@
 #!/usr/bin/env bb
 ;; Mutation testing for clj-replace.bb.
 ;;
-;; Usage: bb mutate [--jobs N] [--limit N] [--out report.edn]
+;; Usage: bb mutate [--jobs N] [--limit N] [--seed S] [--out report.edn]
 ;;        (from the repository root; or bb skills/clj-replace/test/mutate.bb ...)
 ;;
 ;; Makes one mutant of clj-replace.bb per mutation point, runs the regression
@@ -16,10 +16,18 @@
 ;;   int      an integer literal n to n+1 (exit codes, counts)
 ;;   string   a non-empty string literal to "" (messages; docstrings skipped)
 ;; The require / add-deps forms at the top are not mutated.
+;;
+;; A mutant counts as killed only when the cases report a FAIL, XPASS or
+;; DOC problem; any other non-zero exit is an :error, kept out of the score.
+;; Survivors that a person has judged equivalent are listed, with the reason,
+;; in mutate-equivalent.edn (matched by source line and operator, not line
+;; number). bb mutate exits 1 when there is a new survivor or an error.
+;; --limit N runs a random sample of N mutants (--seed S, default 1).
 ;; CLJ_REPLACE_SCRIPT selects the script to mutate.
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as proc]
+         '[clojure.edn]
          '[clojure.string :as str]
          '[rewrite-clj.node :as n]
          '[rewrite-clj.zip :as z])
@@ -28,6 +36,7 @@
 (def script (or (System/getenv "CLJ_REPLACE_SCRIPT")
                 (str (fs/path here ".." "scripts" "clj-replace.bb"))))
 (def runner (str (fs/path here "run.bb")))
+(def equivalent-file (str (fs/path here "mutate-equivalent.edn")))
 
 (def swaps
   {"=" "not=", "not=" "=", "<" "<=", "<=" "<", ">" ">=", ">=" ">",
@@ -39,20 +48,22 @@
 
 (defn usage-error [msg]
   (println (str "mutate: " msg))
-  (println "usage: bb mutate [--jobs N] [--limit N] [--out report.edn]")
+  (println "usage: bb mutate [--jobs N] [--limit N] [--seed S] [--out report.edn]")
   (System/exit 1))
 
 (defn parse-args [args]
   (loop [[a b & more :as args] args
-         opts {:jobs (.availableProcessors (Runtime/getRuntime))}]
+         opts {:jobs (.availableProcessors (Runtime/getRuntime)) :seed 1}]
     (cond
       (empty? args) opts
-      (#{"--jobs" "--limit"} a) (if-let [v (some-> b parse-long)]
-                                  (if (pos? v)
-                                    (recur more (assoc opts (keyword (subs a 2)) v))
-                                    (usage-error (str a " needs a positive number")))
-                                  (usage-error (str a " needs a positive number")))
-      (= a "--out") (if b (recur more (assoc opts :out b)) (usage-error "--out needs a path"))
+      (#{"--jobs" "--limit" "--seed"} a) (if-let [v (some-> b parse-long)]
+                                           (if (pos? v)
+                                             (recur more (assoc opts (keyword (subs a 2)) v))
+                                             (usage-error (str a " needs a positive number")))
+                                           (usage-error (str a " needs a positive number")))
+      (= a "--out") (if (and b (not (str/starts-with? b "--")))
+                      (recur more (assoc opts :out b))
+                      (usage-error "--out needs a path"))
       :else (usage-error (str "unknown argument: " a)))))
 
 ;; ---------------------------------------------------------------- mutants
@@ -69,7 +80,10 @@
 
 (defn docstring? [zloc]
   (let [l2 (some-> zloc z/left z/left)]
-    (boolean (and l2 (#{"defn" "defn-" "defmacro"} (z/string l2))))))
+    (boolean (and l2
+                  (or (#{"defn" "defn-" "defmacro"} (z/string l2))
+                      ;; (def name "doc" value)
+                      (and (#{"def" "defonce"} (z/string l2)) (z/right zloc)))))))
 
 (defn string-node? [nd]
   (and (#{:token :multi-line} (n/tag nd))
@@ -106,7 +120,9 @@
 ;; ---------------------------------------------------------------- running
 
 (defn run-cases
-  ":killed, :survived or :timeout for the script at path."
+  "{:outcome :killed | :survived | :timeout | :error} for the script at path.
+  Killed needs evidence from the cases (a FAIL, XPASS or DOC line); any
+  other failure of the run is an :error."
   [path]
   (let [p (proc/process {:out :string :err :string
                          :extra-env {"CLJ_REPLACE_SCRIPT" path
@@ -114,9 +130,11 @@
                         "bb" runner)
         r (deref p 180000 ::timeout)]
     (cond
-      (= ::timeout r) (do (proc/destroy-tree p) :timeout)
-      (zero? (:exit r)) :survived
-      :else :killed)))
+      (= ::timeout r) (do (proc/destroy-tree p) {:outcome :timeout})
+      (zero? (:exit r)) {:outcome :survived}
+      (re-find #"(?m)^(FAIL|XPASS|DOC) " (:out r)) {:outcome :killed}
+      :else {:outcome :error
+             :error (let [s (str (:out r) (:err r))] (subs s (max 0 (- (count s) 600))))})))
 
 (defn run-all [tmp jobs ms]
   (let [sem (java.util.concurrent.Semaphore. jobs)
@@ -126,45 +144,84 @@
                  (future
                    (.acquire sem)
                    (try
-                     (let [path (str (fs/path tmp (str "mutant-" (:id m) ".bb")))]
-                       (spit path (:source m))
-                       (let [outcome (run-cases path)]
-                         (let [k (swap! done inc)]
-                           (when (zero? (mod k 25))
-                             (println (format "  %d/%d" k (count ms)))))
-                         (assoc (dissoc m :source) :outcome outcome)))
+                     (let [path (str (fs/path tmp (str "mutant-" (:id m) ".bb")))
+                           result (try
+                                    (spit path (:source m))
+                                    (run-cases path)
+                                    (catch Exception e
+                                      {:outcome :error :error (ex-message e)}))
+                           k (swap! done inc)]
+                       (when (zero? (mod k 25))
+                         (println (format "  %d/%d" k (count ms))))
+                       (merge (dissoc m :source) result))
                      (finally (.release sem))))))
          (mapv deref))))
 
 (defn source-line [source line]
   (str/trim (nth (str/split-lines source) (dec line) "")))
 
-(let [{:keys [jobs limit out]} (parse-args *command-line-args*)
+(defn equivalent-key [{:keys [source-line from to]}]
+  [source-line from to])
+
+(defn load-equivalents []
+  (if (fs/exists? equivalent-file)
+    (into {} (map (juxt equivalent-key identity))
+          (clojure.edn/read-string (slurp equivalent-file)))
+    {}))
+
+(defn sample [seed n xs]
+  (let [rnd (java.util.Random. seed)]
+    (sort-by :id (take n (sort-by (fn [_] (.nextDouble rnd)) xs)))))
+
+(defn print-survivor [{:keys [line col kind from to source-line]}]
+  (println (format "  %4d:%-3d %-6s %s -> %s   | %s" line col (name kind) from to source-line)))
+
+(let [{:keys [jobs limit seed out]} (parse-args *command-line-args*)
       source (slurp script)
-      all (mutants source)
-      ms (cond->> all limit (take limit))
+      all (mapv #(assoc % :source-line (source-line source (:line %))) (mutants source))
+      ms (if limit (sample seed limit all) all)
+      equivalents (load-equivalents)
       tmp (fs/create-temp-dir {:prefix "clj-replace-mutate"})
-      outcome (try
-                (if (not= :survived (run-cases script))
+      _ (.addShutdownHook (Runtime/getRuntime) (Thread. #(fs/delete-tree tmp)))
+      results (try
+                (if (not= :survived (:outcome (run-cases script)))
                   (do (println "The unmutated script does not pass the cases; fix that first.")
                       ::failed)
                   (do (println (format "%d mutants (%s), %d jobs" (count ms)
                                        (pr-str (frequencies (map :kind ms))) jobs))
                       (run-all tmp jobs ms)))
                 (finally (fs/delete-tree tmp)))]
-  (when (= ::failed outcome) (System/exit 1))
-  (let [freq (frequencies (map :outcome outcome))
-        killed (+ (:killed freq 0) (:timeout freq 0))
-        survivors (sort-by :id (filter #(= :survived (:outcome %)) outcome))]
+  (when (= ::failed results) (System/exit 1))
+  (let [by (group-by :outcome results)
+        survivors (sort-by :id (:survived by))
+        known (filter #(equivalents (equivalent-key %)) survivors)
+        new-survivors (remove #(equivalents (equivalent-key %)) survivors)
+        errors (:error by)
+        killed (+ (count (:killed by)) (count (:timeout by)))
+        scored (- (count results) (count errors))
+        stale (when-not limit
+                (remove (set (map equivalent-key survivors)) (keys equivalents)))]
     (println)
-    (println "Surviving mutants (a gap in the cases, or equivalent to the original):")
-    (doseq [{:keys [line col kind from to]} survivors]
-      (println (format "  %4d:%-3d %-6s %s -> %s   | %s" line col (name kind) from to
-                       (source-line source line))))
+    (when (seq known)
+      (println (format "Known equivalent survivors (%d, see mutate-equivalent.edn):" (count known)))
+      (doseq [s known] (print-survivor s)))
+    (when (seq new-survivors)
+      (println (format "NEW survivors (%d): add a case, or record why the mutant is equivalent:" (count new-survivors)))
+      (doseq [s new-survivors] (print-survivor s)))
+    (when (seq errors)
+      (println (format "Errors (%d, not scored):" (count errors)))
+      (doseq [{:keys [line col from to error]} errors]
+        (println (format "  %d:%d %s -> %s: %s" line col from to (str/trim (str error))))))
+    (when (seq stale)
+      (println "Equivalent entries that no longer survive (remove them):")
+      (doseq [k stale] (println "  " (pr-str k))))
     (println)
-    (println (format "mutation score: %d/%d killed (%.1f%%); %d survived, %d timed out"
-                     killed (count outcome) (* 100.0 (/ killed (max 1 (count outcome))))
-                     (count survivors) (:timeout freq 0)))
+    (println (format "mutation score: %d/%d killed (%.1f%%); excluding %d known equivalent: %d/%d (%.1f%%); %d timed out, %d errors"
+                     killed scored (* 100.0 (/ killed (max 1 scored)))
+                     (count known) killed (- scored (count known))
+                     (* 100.0 (/ killed (max 1 (- scored (count known)))))
+                     (count (:timeout by)) (count errors)))
     (when out
-      (spit out (pr-str {:script script :results (mapv #(dissoc % :source) outcome)}))
-      (println "report:" out))))
+      (spit out (pr-str {:script script :results (vec results)}))
+      (println "report:" out))
+    (System/exit (if (or (seq new-survivors) (seq errors)) 1 0))))
