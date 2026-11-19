@@ -76,6 +76,15 @@ bb skills/clj-replace/test/run.bb nan     # selected case ids
 CLJ_REPLACE_SCRIPT=/path/to/other.bb bb test   # another implementation
 ```
 
+`test/corpus.bb` is a property test over real code: it samples forms from a
+Clojure corpus, relayouts each one, and checks that clj-replace finds exactly
+that form. It needs a corpus on disk, so it is not part of `bb test`:
+
+```bash
+git clone --depth 1 https://github.com/jonase/eastwood /tmp/eastwood
+bb corpus --sample 300 /tmp/eastwood
+```
+
 Cases marked `:known-bug true` describe correct behaviour the script does not
 have yet; they count as expected failures (XFAIL). When one starts passing the
 run fails with XPASS, so remove its marker.
