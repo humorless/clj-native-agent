@@ -1,0 +1,47 @@
+;; Scenarios for the exit 4 (near match) retry eval. In each, the first
+;; call's old-string has the same value as a form in the file but is written
+;; differently, so clj-replace answers exit 4 with the file's text. A good
+;; agent retries with that text and keeps what the file has that its
+;; old-string lacked (metadata, comments).
+;;
+;; :file         fixture content
+;; :near-text    the file's text of the form clj-replace will show
+;; :first-old / :first-new   what the task tells the agent to try first
+;; :goal         the change, in words, as given to the agent
+;; :must-contain / :must-not-contain   text checks on the final file, after
+;;               normalising each line (trimmed, inner whitespace runs
+;;               collapsed, blank lines dropped): line breaks still count,
+;;               so a comment moved onto another line fails
+;; :must-contain-squashed   checked with all whitespace collapsed (order,
+;;               not layout)
+;; :unchanged    text that must still be in the final file verbatim
+
+[{:id :metadata
+  :file "(ns app.config)\n\n(defn ^:private parse-port\n  [s]\n  (Integer/parseInt s))\n\n(defn port [env]\n  (parse-port (get env \"PORT\" \"8080\")))\n"
+  :near-text "(defn ^:private parse-port\n  [s]\n  (Integer/parseInt s))"
+  :first-old "(defn parse-port [s] (Integer/parseInt s))"
+  :first-new "(defn parse-port [s] (parse-long s))"
+  :goal "make parse-port use parse-long instead of Integer/parseInt"
+  :must-contain ["^:private" "(parse-long s)"]
+  :must-not-contain ["Integer/parseInt"]
+  :unchanged ["(ns app.config)" "(defn port [env]\n  (parse-port (get env \"PORT\" \"8080\")))"]}
+
+ {:id :comment
+  :file "(ns app.cart)\n\n(defn total\n  \"Sum of item prices.\"\n  [items]\n  ;; prices are stored in cents\n  (reduce + (map :price items)))\n"
+  :near-text "(defn total\n  \"Sum of item prices.\"\n  [items]\n  ;; prices are stored in cents\n  (reduce + (map :price items)))"
+  :first-old "(defn total \"Sum of item prices.\" [items] (reduce + (map :price items)))"
+  :first-new "(defn total \"Sum of item prices.\" [items] (transduce (map :price) + items))"
+  :goal "make total use transduce instead of reduce over map"
+  :must-contain [";; prices are stored in cents\n(transduce (map :price) + items))"]
+  :must-not-contain ["(reduce + (map :price items))"]
+  :unchanged ["(ns app.cart)" "\"Sum of item prices.\""]}
+
+ {:id :map-order
+  :file "(ns app.server)\n\n(def config\n  {:port 8080\n   :host \"localhost\"\n   :join? false})\n\n(defn start [] (run config))\n"
+  :near-text "{:port 8080\n   :host \"localhost\"\n   :join? false}"
+  :first-old "{:host \"localhost\" :port 8080 :join? false}"
+  :first-new "{:host \"0.0.0.0\" :port 8080 :join? false}"
+  :goal "make the server listen on host 0.0.0.0 instead of localhost"
+  :must-contain-squashed ["{:port 8080 :host \"0.0.0.0\" :join? false}"]
+  :must-not-contain ["\"localhost\""]
+  :unchanged ["(ns app.server)" "(defn start [] (run config))"]}]
