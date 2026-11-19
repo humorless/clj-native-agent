@@ -1,0 +1,61 @@
+name: clj-replace
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: bb test and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeLaGuardo/setup-clojure@13.7.0
+        with:
+          bb: 1.12.216
+          clj-kondo: 2024.09.27
+          cljfmt: 0.13.1
+      - name: Cache dependencies fetched by add-deps
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.deps.clj
+          key: deps-${{ hashFiles('skills/clj-replace/scripts/*.bb') }}
+      - run: bb lint
+      - run: bb test
+
+  perf:
+    name: performance guard
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: DeLaGuardo/setup-clojure@13.7.0
+        with:
+          bb: 1.12.216
+      - name: Cache dependencies fetched by add-deps
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.deps.clj
+          key: deps-${{ hashFiles('skills/clj-replace/scripts/*.bb') }}
+      - name: Compare with the base branch's script
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          script=skills/clj-replace/scripts/clj-replace.bb
+          baseline="$RUNNER_TEMP/baseline.bb"
+          if git show "origin/$BASE_REF:$script" > "$baseline"; then
+            bb bench --baseline "$baseline"
+          else
+            echo "No $script on $BASE_REF: scaling checks only."
+            bb bench
+          fi
