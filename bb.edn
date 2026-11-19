@@ -13,5 +13,8 @@
   bench {:doc "Performance guard: bb bench [--baseline <script>] [--runs N] [--max-slowdown X]"
          :task (apply shell "bb skills/clj-replace/test/bench.bb" *command-line-args*)}
 
+  mutate {:doc "Mutation testing: how many mutants of clj-replace.bb the cases kill. bb mutate [--jobs N] [--limit N] [--out file]"
+          :task (apply shell "bb skills/clj-replace/test/mutate.bb" *command-line-args*)}
+
   corpus {:doc "Run the clj-replace corpus property test: bb corpus [--sample N] [--seed S] <dir>..."
           :task (apply shell "bb skills/clj-replace/test/corpus.bb" *command-line-args*)}}}
