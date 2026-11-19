@@ -918,6 +918,16 @@
   :new "g"
   :expect {:exit 2 :output "No matching"}}
 
+ {:id :nul-symbol-fn-not-near
+  :group :basic
+  :known-bug true
+  :desc "a hand-written fn* whose symbols contain a NUL character is still not a near match for #() (placeholders cannot be forged)"
+  :file "(f (fn* [\u0000arg0] (g \u0000arg0)))\n"
+  :old "#(g %)"
+  :new "g"
+  :expect {:exit 2 :output "No matching"}
+  :interim {:exit 4}}
+
  ;; ------------------------------------------ crash: unguarded old sexpr
 
  {:id :discard-as-old-keyword
