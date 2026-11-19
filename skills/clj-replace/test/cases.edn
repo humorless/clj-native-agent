@@ -318,6 +318,14 @@
   :new "(do (bar))"
   :expect {:exit 0 :file "(do (bar))\n"}}
 
+ {:id :deref-vs-deref-form
+  :group :basic
+  :desc "(deref a) does not match @a"
+  :file "(def v @a)\n"
+  :old "(def v (deref a))"
+  :new "(def v nil)"
+  :expect {:exit 2}}
+
  ;; ------------------------------------------- false negative: should match
 
  {:id :anon-fn
@@ -480,6 +488,105 @@
   :new "(def c nil)"
   :expect {:exit 2}
   :interim {:exit 0 :file "(def c nil)\n"}}
+
+ ;; ---------------- false positive: same value, different spelling
+ ;; Decision 2026-11-19: clj-replace ignores layout only (whitespace,
+ ;; commas, line breaks), so a different spelling of the same value is
+ ;; no match.
+
+ {:id :map-key-order
+  :group :false-positive
+  :known-bug true
+  :source "eastwood resource/var-info.edn:756"
+  :desc "a map literal with keys in another order is no match"
+  :file "(def m {:a 1 :b 2})\n"
+  :old "(def m {:b 2 :a 1})"
+  :new "(def m {})"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def m {})\n"}}
+
+ {:id :set-order
+  :group :false-positive
+  :known-bug true
+  :source "eastwood src/eastwood/linters/typos.clj:932"
+  :desc "a set literal with elements in another order is no match"
+  :file "(def s #{'fn 'clojure.core/fn})\n"
+  :old "(def s #{'clojure.core/fn 'fn})"
+  :new "(def s #{})"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def s #{})\n"}}
+
+ {:id :quote-vs-quote-form
+  :group :false-positive
+  :known-bug true
+  :source "splint test/noahtheduke/splint/pattern_test.clj:33"
+  :desc "(quote x) does not match 'x"
+  :file "(def l '(1 2 3))\n"
+  :old "(def l (quote (1 2 3)))"
+  :new "(def l nil)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def l nil)\n"}}
+
+ {:id :var-quote-vs-var-form
+  :group :false-positive
+  :known-bug true
+  :desc "(var a) does not match #'a"
+  :file "(def v #'a)\n"
+  :old "(def v (var a))"
+  :new "(def v nil)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def v nil)\n"}}
+
+ {:id :hex-vs-decimal
+  :group :false-positive
+  :known-bug true
+  :desc "255 does not match 0xFF"
+  :file "(def n 0xFF)\n"
+  :old "(def n 255)"
+  :new "(def n 0)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def n 0)\n"}}
+
+ {:id :radix-vs-decimal
+  :group :false-positive
+  :known-bug true
+  :desc "10 does not match 2r1010"
+  :file "(def n 2r1010)\n"
+  :old "(def n 10)"
+  :new "(def n 0)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def n 0)\n"}}
+
+ {:id :float-spelling
+  :group :false-positive
+  :known-bug true
+  :desc "1.00 does not match 1.0"
+  :file "(def d 1.0)\n"
+  :old "(def d 1.00)"
+  :new "(def d 0)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def d 0)\n"}}
+
+ {:id :string-newline-vs-escape
+  :group :false-positive
+  :known-bug true
+  :desc "a string with \\n does not match one with a literal line break"
+  :file "(def s \"a\nb\")\n"
+  :old "(def s \"a\\nb\")"
+  :new "(def s \"\")"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def s \"\")\n"}}
+
+ {:id :comment-inside
+  :group :false-positive
+  :known-bug true
+  :source "eastwood copied-deps/.../clojure/data/priority_map.clj:353"
+  :desc "a form with an inner ; comment does not match one without: replacing deletes the comment"
+  :file "(or (keyword? x) ; note\n    (= 1 n))\n"
+  :old "(or (keyword? x) (= 1 n))"
+  :new "(and a b)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(and a b)\n"}}
 
  ;; ------------------------------------------ crash: unguarded old sexpr
 
