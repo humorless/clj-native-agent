@@ -1,0 +1,296 @@
+;; Regression cases for clj-replace.bb, run by test/run.bb.
+;;
+;; Keys:
+;;   :id          unique keyword, also the temp file name
+;;   :group       :basic | :false-negative | :false-positive
+;;   :desc        one line: what the case checks
+;;   :file        file content before the run
+;;   :old :new    the two arguments passed to clj-replace.bb
+;;   omit :file from :expect on a non-zero exit to require the file to be
+;;   unchanged
+;;   :expect      {:exit n :file "..." :output "regex"}; :file and
+;;                :output are optional
+;;   :known-bug   true when :expect is the correct behaviour but the
+;;                script does not do it yet (expected failure)
+;;   :interim     same shape as :expect: what a known-bug case does today
+;;   :issue       GitHub issue number, when there is one
+;;   :missing-file? true to run without creating the file
+
+[;; ---------------------------------------------------------------- basic
+
+ {:id :whitespace-insensitive
+  :group :basic
+  :desc "extra spaces and newlines in the file do not prevent a match"
+  :file "(defn f [db id attrs]\n  (merge-user  db\n    id   attrs))\n"
+  :old "(merge-user db id attrs)"
+  :new "(update-user db id attrs)"
+  :expect {:exit 0 :file "(defn f [db id attrs]\n  (update-user db id attrs))\n"}}
+
+ {:id :multiline-old
+  :group :basic
+  :desc "a one-line old string matches a form spread over several lines"
+  :file "(some-function\n  arg1\n  arg2\n  arg3)\n"
+  :old "(some-function arg1 arg2 arg3)"
+  :new "(other-function arg1 arg2 arg3)"
+  :expect {:exit 0 :file "(other-function arg1 arg2 arg3)\n"}}
+
+ {:id :nested-form
+  :group :basic
+  :desc "only the matched inner form is replaced"
+  :file "(defn f [x]\n  (let [y (inc x)]\n    (* y 2)))\n"
+  :old "(inc x)"
+  :new "(dec x)"
+  :expect {:exit 0 :file "(defn f [x]\n  (let [y (dec x)]\n    (* y 2)))\n"}}
+
+ {:id :preserve-surroundings
+  :group :basic
+  :desc "comments and formatting outside the matched form are kept"
+  :file ";; header comment\n(defn f []\n  ;; inside\n  (foo 1)) ; trailing\n\n(bar)\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 0 :file ";; header comment\n(defn f []\n  ;; inside\n  (foo 2)) ; trailing\n\n(bar)\n"}}
+
+ {:id :top-level-form
+  :group :basic
+  :desc "a whole top-level form can be replaced"
+  :file "(ns a)\n\n(def x 1)\n\n(def y 2)\n"
+  :old "(def x 1)"
+  :new "(def x 10)"
+  :expect {:exit 0 :file "(ns a)\n\n(def x 10)\n\n(def y 2)\n"}}
+
+ {:id :single-symbol
+  :group :basic
+  :desc "a single token can be the old string"
+  :file "(defn handler [req] (respond))\n"
+  :old "req"
+  :new "request"
+  :expect {:exit 0 :file "(defn handler [request] (respond))\n"}}
+
+ {:id :string-literal
+  :group :basic
+  :desc "string literals compare by content"
+  :file "(println \"hello  world\")\n"
+  :old "\"hello  world\""
+  :new "\"hi\""
+  :expect {:exit 0 :file "(println \"hi\")\n"}}
+
+ {:id :regex-literal
+  :group :basic
+  :desc "forms containing a regex literal match"
+  :file "(def r (re-find #\"\\d+\" s))\n"
+  :old "(re-find #\"\\d+\" s)"
+  :new "(re-seq #\"\\d+\" s)"
+  :expect {:exit 0 :file "(def r (re-seq #\"\\d+\" s))\n"}}
+
+ {:id :new-with-anon-fn
+  :group :basic
+  :desc "a new string containing #() is written verbatim"
+  :file "(def xs (map inc ys))\n"
+  :old "(map inc ys)"
+  :new "(map #(+ % 1) ys)"
+  :expect {:exit 0 :file "(def xs (map #(+ % 1) ys))\n"}}
+
+ {:id :ambiguous
+  :group :basic
+  :desc "two identical forms give exit 3 and no change"
+  :file "(foo bar)\n(baz (foo bar))\n"
+  :old "(foo bar)"
+  :new "(qux)"
+  :expect {:exit 3 :output "Found 2 matching S-expressions in .*\\(ambiguous\\)\\n  1\\. line 1, column 1: \\(foo bar\\)\\n  2\\. line 2, column 6: \\(foo bar\\)\\nPlease provide a more specific old-string"}}
+
+ {:id :ambiguous-in-comment
+  :group :basic
+  :desc "a form inside (comment ...) still counts as a match"
+  :file "(comment (foo))\n(foo)\n"
+  :old "(foo)"
+  :new "(bar)"
+  :expect {:exit 3}}
+
+ {:id :no-match
+  :group :basic
+  :desc "an absent form gives exit 2 and no change"
+  :file "(def x 1)\n"
+  :old "(def y 1)"
+  :new "(def y 2)"
+  :expect {:exit 2 :output "✗ Error: No matching S-expression found in "}}
+
+ {:id :old-parse-error
+  :group :basic
+  :desc "an unbalanced old string gives exit 1"
+  :file "(def x 1)\n"
+  :old "(def x 1"
+  :new "(def x 2)"
+  :expect {:exit 1 :output "✗ old-string parse error: "}}
+
+ {:id :new-parse-error
+  :group :basic
+  :desc "an unbalanced new string gives exit 1"
+  :file "(def x 1)\n"
+  :old "(def x 1)"
+  :new "(def x 2"
+  :expect {:exit 1 :output "✗ new-string parse error: "}}
+
+ {:id :file-not-found
+  :group :basic
+  :desc "a missing file gives exit 1"
+  :missing-file? true
+  :old "(def x 1)"
+  :new "(def x 2)"
+  :expect {:exit 1 :file nil :output "✗ Error: File not found: "}}
+
+ {:id :success-output
+  :group :basic
+  :desc "success output: count, file, location, old and new"
+  :file "(defn f []\n  (foo 1))\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 0
+           :file "(defn f []\n  (foo 2))\n"
+           :output "✓ Replaced 1 node\\(s\\) in \\S+success-output\\.clj\n  Location: line 2, column 3\n  Old: \\(foo 1\\)\n  New: \\(foo 2\\)"}}
+
+ {:id :usage-no-args
+  :group :basic
+  :desc "no arguments print usage and exit 1"
+  :args []
+  :file "(def x 1)\n"
+  :expect {:exit 1 :output "Usage: clj-replace.bb <filename> <old-string> <new-string>"}}
+
+ {:id :usage-missing-new
+  :group :basic
+  :desc "a missing new-string prints usage and exit 1"
+  :args ["%FILE" "(def x 1)"]
+  :file "(def x 1)\n"
+  :expect {:exit 1 :output "Usage:"}}
+
+ {:id :text-only-in-comment
+  :group :basic
+  :desc "old text that appears only in a comment is no match (exit 2)"
+  :file ";; (foo 1)\n(bar)\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 2 :output "No matching"}}
+
+ {:id :text-only-in-string
+  :group :basic
+  :desc "old text that appears only inside a string literal is no match (exit 2)"
+  :file "(def s \"(foo 1)\")\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 2 :output "No matching"}}
+
+ ;; ------------------------------------------- false negative: should match
+
+ {:id :anon-fn
+  :group :false-negative
+  :issue 3
+  :known-bug true
+  :desc "a form containing #() matches itself (gensym names differ per z/sexpr call)"
+  :file "(def keep-md (filter #(str/ends-with? % \".md\") xs))\n"
+  :old "(def keep-md (filter #(str/ends-with? % \".md\") xs))"
+  :new "(def keep-md (filter (fn [p] (str/ends-with? p \".md\")) xs))"
+  :expect {:exit 0 :file "(def keep-md (filter (fn [p] (str/ends-with? p \".md\")) xs))\n"}
+  :interim {:exit 2 :output "No matching"}}
+
+ {:id :anon-fn-rest-arg
+  :group :false-negative
+  :issue 3
+  :known-bug true
+  :desc "#() with %& (rest__N# gensym) matches itself"
+  :file "(f #(apply + % %&))\n"
+  :old "(f #(apply + % %&))"
+  :new "(f +)"
+  :expect {:exit 0 :file "(f +)\n"}
+  :interim {:exit 2 :output "No matching"}}
+
+ {:id :anon-fn-arg-order
+  :group :false-negative
+  :issue 3
+  :known-bug true
+  :desc "#(+ %2 %1) matches only itself, not #(+ %1 %2)"
+  :file "(map #(+ %1 %2) a b)\n(map #(+ %2 %1) a b)\n"
+  :old "(map #(+ %2 %1) a b)"
+  :new "(map - a b)"
+  :expect {:exit 0 :file "(map #(+ %1 %2) a b)\n(map - a b)\n"}
+  :interim {:exit 2 :output "No matching"}}
+
+ {:id :anon-fn-in-syntax-quote
+  :group :false-negative
+  :known-bug true
+  :desc "#() inside a syntax-quoted macro body matches itself"
+  :file "(defmacro m [] `(map #(inc %) xs))\n"
+  :old "(defmacro m [] `(map #(inc %) xs))"
+  :new "(defmacro m [] 1)"
+  :expect {:exit 0 :file "(defmacro m [] 1)\n"}
+  :interim {:exit 2 :output "No matching"}}
+
+ {:id :nan
+  :group :false-negative
+  :known-bug true
+  :desc "##NaN matches itself (NaN is not = to NaN)"
+  :file "(def x (max ##NaN 1))\n"
+  :old "(max ##NaN 1)"
+  :new "(max 0 1)"
+  :expect {:exit 0 :file "(def x (max 0 1))\n"}
+  :interim {:exit 2 :output "No matching"}}
+
+ {:id :nan-in-vector
+  :group :false-negative
+  :known-bug true
+  :desc "##NaN nested in a collection matches itself"
+  :file "(def v [##NaN])\n"
+  :old "(def v [##NaN])"
+  :new "(def v [])"
+  :expect {:exit 0 :file "(def v [])\n"}
+  :interim {:exit 2 :output "No matching"}}
+
+ ;; ------------------------------- false positive: must not match silently
+
+ {:id :metadata-ignored
+  :group :false-positive
+  :known-bug true
+  :desc "(defn f ...) must not match (defn ^:private f ...): replacing drops the metadata"
+  :file "(defn ^:private f [] 1)\n"
+  :old "(defn f [] 1)"
+  :new "(defn f [] 2)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(defn f [] 2)\n"}}
+
+ {:id :metadata-ambiguous
+  :group :false-positive
+  :known-bug true
+  :desc "with and without metadata are different forms, so the match is unique"
+  :file "(defn f [] 1)\n(defn ^:private f [] 1)\n"
+  :old "(defn ^:private f [] 1)"
+  :new "(defn g [] 1)"
+  :expect {:exit 0 :file "(defn f [] 1)\n(defn g [] 1)\n"}
+  :interim {:exit 3}}
+
+ {:id :discard-ignored
+  :group :false-positive
+  :known-bug true
+  :desc "[1 3] must not match [1 #_2 3]: replacing deletes the discarded code"
+  :file "(def x [1 #_2 3])\n"
+  :old "(def x [1 3])"
+  :new "(def x [1 3 4])"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def x [1 3 4])\n"}}
+
+ {:id :vector-vs-list
+  :group :false-positive
+  :known-bug true
+  :desc "a list must not match a vector with the same elements"
+  :file "(let [a 1] a)\n"
+  :old "(let (a 1) a)"
+  :new "(let [b 1] b)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(let [b 1] b)\n"}}
+
+ {:id :long-vs-bigint
+  :group :false-positive
+  :known-bug true
+  :desc "1 must not match 1N"
+  :file "(def a 1N)\n"
+  :old "(def a 1)"
+  :new "(def a 2)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def a 2)\n"}}]

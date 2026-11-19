@@ -63,6 +63,22 @@ bb clj-replace.bb <filename> <old-string> <new-string>
 
 See [`SKILL.md`](SKILL.md) for full documentation.
 
+## Regression Tests
+
+`test/cases.edn` holds common and edge cases for the script; `test/run.bb`
+runs each one against `scripts/clj-replace.bb` and checks the exit code and the
+resulting file. From the repository root:
+
+```bash
+bb test                                   # all cases
+bb skills/clj-replace/test/run.bb nan     # selected case ids
+CLJ_REPLACE_SCRIPT=/path/to/other.bb bb test   # another implementation
+```
+
+Cases marked `:known-bug true` describe correct behaviour the script does not
+have yet; they count as expected failures (XFAIL). When one starts passing the
+run fails with XPASS, so remove its marker.
+
 ## Verify It Works
 
 clj-replace includes evaluation tests. To verify the tool works on your system:

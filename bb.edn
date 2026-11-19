@@ -1,0 +1,3 @@
+{:tasks
+ {test {:doc "Run clj-replace regression cases"
+        :task (shell "bb skills/clj-replace/test/run.bb")}}}
