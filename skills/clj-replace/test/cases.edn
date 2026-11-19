@@ -664,33 +664,27 @@
 
  {:id :file-parse-error
   :group :input
-  :known-bug true
   :desc "a file that does not parse gives a clear exit 1, not a stack trace"
   :file "(defn f [] (foo)\n(bar\n"
   :old "(foo)"
   :new "(baz)"
-  :expect {:exit 1 :output "file parse error"}
-  :interim {:exit 1 :output "----- Error"}}
+  :expect {:exit 1 :output "file parse error"}}
 
  {:id :anon-fn-near-match
   :group :false-positive
-  :known-bug true
   :desc "a #() form that differs only by a comment is a near match (gensyms must not hide it)"
   :file "(map #(inc ;; c\n       %) xs)\n"
   :old "(map #(inc %) xs)"
   :new "(map inc xs)"
-  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(map #\\(inc ;; c\n       %\\) xs\\)"}
-  :interim {:exit 2}}
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(map #\\(inc ;; c\n       %\\) xs\\)"}}
 
  {:id :comma-only-new-deletes
   :group :basic
-  :known-bug true
   :desc "a new string of only commas and whitespace is blank: it deletes, like whitespace"
   :file "(a)\n(b)\n"
   :old "(a)"
   :new " , "
-  :expect {:exit 0 :file "\n(b)\n"}
-  :interim {:exit 1}}
+  :expect {:exit 0 :file "\n(b)\n"}}
 
  ;; ------------------------------------------ crash: unguarded old sexpr
 

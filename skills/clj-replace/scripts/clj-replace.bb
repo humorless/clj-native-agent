@@ -6,37 +6,77 @@
 (require '[rewrite-clj.zip :as z]
          '[rewrite-clj.node :as n]
          '[rewrite-clj.parser :as p]
-         '[clojure.string :as str])
+         '[clojure.string :as str]
+         '[clojure.walk :as walk])
 
-;; ---------------------------------------------------------------- canonical form
-;; Two nodes match when their canonical strings are equal. The canonical
-;; string is the node's own source with layout normalised: whitespace,
-;; newline and comma nodes between children are dropped and one space is
-;; put between the remaining children. Leaves (tokens, strings, regexes,
-;; ...) keep their exact source text. Comments keep their text, minus
-;; trailing whitespace, and end with a newline so they cannot swallow the
-;; next child.
+;; ---------------------------------------------------------------- comparison
+;; Two nodes are written the same way when they differ only in layout:
+;; whitespace, newline and comma nodes between children. Inner nodes need
+;; the same tag, the same delimiters ("(" ")", "#(" ")", "^", ...) and the
+;; same non-layout children in order; leaves (tokens, strings, regexes, ...)
+;; need the same source text; comments the same text up to trailing
+;; whitespace. The comparison stops at the first difference, so most nodes
+;; are rejected by their tag or child count.
 
 (defn layout? [nd]
   (contains? #{:whitespace :newline :comma} (n/tag nd)))
 
-(def separator (n/token-node nil " "))
+(defn significant-children [nd]
+  (into [] (remove layout?) (n/children nd)))
 
-(defn canonical-node [nd]
-  (cond
-    (= :comment (n/tag nd))
-    (n/token-node nil (str (str/trimr (n/string nd)) "\n"))
+(defn delimiters
+  "The node's own text without its children, e.g. \"()\" or \"#()\"."
+  [nd]
+  (n/string (n/replace-children nd [])))
 
-    (n/inner? nd)
-    (n/replace-children nd (->> (n/children nd)
-                                (remove layout?)
-                                (map canonical-node)
-                                (interpose separator)))
+(defn leaf-text [nd]
+  (if (= :comment (n/tag nd))
+    (str/trimr (n/string nd))
+    (n/string nd)))
 
-    :else nd))
+(defn significant-count [nd]
+  (reduce (fn [k c] (if (layout? c) k (inc k))) 0 (n/children nd)))
 
-(defn canonical [nd]
-  (n/string (canonical-node nd)))
+(defn same-source? [a b]
+  (and (= (n/tag a) (n/tag b))
+       (if (n/inner? a)
+         (and (n/inner? b)
+              (= (significant-count a) (significant-count b))
+              (= (delimiters a) (delimiters b))
+              (every? true? (map same-source? (significant-children a) (significant-children b))))
+         (and (not (n/inner? b))
+              (= (leaf-text a) (leaf-text b))))))
+
+;; ---------------------------------------------------------------- near match
+;; Values compared with n/sexpr and =, only to choose the exit 4 message.
+;; #() reads to fresh gensyms (p1__123#) on every call, so they are renamed
+;; in order of appearance before comparing.
+
+(defn- gensym-symbol? [x]
+  (and (symbol? x) (re-matches #"(p\d+|rest)__\d+#" (name x))))
+
+(defn stable-gensyms [form]
+  (let [names (volatile! {})]
+    (walk/prewalk
+     (fn [x]
+       (if (gensym-symbol? x)
+         (or (get @names x)
+             (let [s (symbol (str "%" (count @names)))]
+               (vswap! names assoc x s)
+               s))
+         x))
+     form)))
+
+(defn has-gensym? [form]
+  (boolean (some gensym-symbol? (tree-seq coll? seq form))))
+
+(defn safe-value
+  "{:ok true :value v} with n/sexpr's value, gensyms made stable when
+  stable? is true; {:ok false} when the node has no value (e.g. #_)."
+  [nd stable?]
+  (try (let [v (n/sexpr nd)]
+         {:ok true :value (if stable? (stable-gensyms v) v)})
+       (catch Exception _ {:ok false})))
 
 ;; ---------------------------------------------------------------- input
 
@@ -66,32 +106,33 @@
     (catch Exception _
       {:line "?" :column "?"})))
 
-(defn safe-sexpr [nd]
-  (try {:ok true :value (n/sexpr nd)}
-       (catch Exception _ {:ok false})))
-
 (defn search
-  "One pass over the file. Returns {:exact [...] :near [...]} where exact
-  nodes have the target's canonical form and near nodes have the same
-  value (n/sexpr + =) but a different canonical form."
-  [file-zip target-node]
-  (let [target-canon (canonical target-node)
-        target-value (safe-sexpr target-node)]
+  "One walk over the file. Returns {:exact [...] :near [...]}: exact nodes
+  are written like target up to layout; near nodes have the same value but
+  are written differently. Values are compared only until the first exact
+  match, since near matches matter only when there is none."
+  [file-zip target]
+  (let [target-tag (n/tag target)
+        raw (safe-value target false)
+        ;; Gensyms only need renaming when old-string has a #(); doing it
+        ;; for every node would cost time proportional to depth.
+        stable? (and (:ok raw) (has-gensym? (:value raw)))
+        target-value (if stable? (safe-value target true) raw)]
     (loop [z file-zip
            exact []
            near []]
       (if (z/end? z)
-        {:exact exact :near near}
-        (let [nd (z/node z)
-              hit {:z z :loc (find-location z)}]
+        {:exact exact :near (if (seq exact) [] near)}
+        (let [nd (z/node z)]
           (cond
-            (= target-canon (canonical nd))
-            (recur (z/next z) (conj exact hit) near)
+            (and (= target-tag (n/tag nd)) (same-source? target nd))
+            (recur (z/next z) (conj exact {:z z :loc (find-location z)}) near)
 
-            (and (:ok target-value)
-                 (let [v (safe-sexpr nd)]
+            (and (empty? exact)
+                 (:ok target-value)
+                 (let [v (safe-value nd stable?)]
                    (and (:ok v) (= (:value v) (:value target-value)))))
-            (recur (z/next z) exact (conj near hit))
+            (recur (z/next z) exact (conj near {:z z :loc (find-location z)}))
 
             :else
             (recur (z/next z) exact near)))))))
@@ -113,13 +154,16 @@
     (when-not (:ok new-parse) (fail 1 (str "✗ " (:error new-parse))))
     (when-let [msg (one-form-problem "old-string" (:nodes old-parse))]
       (fail 1 (str "✗ Error: " msg)))
-    (when-not (or (str/blank? new-string) (nil? (one-form-problem "new-string" (:nodes new-parse))))
+    (when-not (or (empty? (:nodes new-parse)) (nil? (one-form-problem "new-string" (:nodes new-parse))))
       (fail 1 (str "✗ Error: " (one-form-problem "new-string" (:nodes new-parse))
                    "; use a blank new-string to delete the matched form")))
-    (let [file-zip (z/of-string (slurp filename) {:track-position? true})
+    (let [file-zip (try
+                     (z/of-string (slurp filename) {:track-position? true})
+                     (catch Exception e
+                       (fail 1 (str "✗ file parse error: " (.getMessage e)))))
           target (first (:nodes old-parse))
-          new-node (if (str/blank? new-string)
-                     (z/node (z/of-string new-string))
+          new-node (if (empty? (:nodes new-parse))
+                     (n/forms-node [])
                      (first (:nodes new-parse)))
           {:keys [exact near]} (search file-zip target)]
       (cond

@@ -124,7 +124,7 @@ Retry with the file's text above as old-string; keep its comments and metadata i
 
 If multiple matches:
 ```
-✗ Found 3 matching S-expressions in path/to/file.clj (ambiguous)
+✗ Error: Found 3 matching S-expressions in path/to/file.clj (ambiguous)
   1. line 42, column 5: (foo bar)
   2. line 85, column 10: (foo bar)
   3. line 120, column 1: (foo bar)
@@ -133,4 +133,4 @@ Please provide a more specific old-string (e.g., include surrounding context)
 
 ## Implementation Details
 
-Uses `rewrite-clj` for format-preserving parsing and replacement. Each form is compared through a canonical rendering of its rewrite-clj node: layout nodes are dropped and one space is put between the remaining children, while tokens, strings and comments keep their source text. The near-match check (exit 4) compares values with `sexpr` and `=`; it only chooses the error message and never edits the file.
+Uses `rewrite-clj` for format-preserving parsing and replacement. Each form in the file is compared with `old-string` as a rewrite-clj node tree: same tag, same delimiters, and the same non-layout children in order; tokens, strings and comments compare by source text (comments up to trailing whitespace). Layout nodes (whitespace, newlines, commas) are skipped. The near-match check (exit 4) compares values with `sexpr` and `=` (with `#()` gensyms renamed); it only chooses the error message and never edits the file.
