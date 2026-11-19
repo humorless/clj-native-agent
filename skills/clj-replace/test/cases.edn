@@ -829,53 +829,43 @@
 
  {:id :layout-namespaced-map
   :group :basic
-  :known-bug true
   :desc "only layout differs: #:a{:b 1} matches"
   :file "(def x #:a{:b 1})\n"
   :old "#:a{:b   1}"
   :new "{}"
-  :expect {:exit 0 :file "(def x {})\n"}
-  :interim {:exit 1 :output "IllegalArgumentException"}}
+  :expect {:exit 0 :file "(def x {})\n"}}
 
  {:id :layout-namespaced-map-nested
   :group :basic
-  :known-bug true
   :desc "only layout differs: (f #:a{:b 1}) matches"
   :file "(f #:a{:b 1})\n"
   :old "(f   #:a{:b  1})"
   :new "(g)"
-  :expect {:exit 0 :file "(g)\n"}
-  :interim {:exit 1 :output "IllegalArgumentException"}}
+  :expect {:exit 0 :file "(g)\n"}}
 
  {:id :layout-auto-namespaced-map
   :group :basic
-  :known-bug true
   :desc "only layout differs: #::{:b 1} matches"
   :file "(ns n)\n(def x #::{:b 1})\n"
   :old "#::{:b   1}"
   :new "{}"
-  :expect {:exit 0 :file "(ns n)\n(def x {})\n"}
-  :interim {:exit 1 :output "IllegalArgumentException"}}
+  :expect {:exit 0 :file "(ns n)\n(def x {})\n"}}
 
  {:id :layout-alias-namespaced-map
   :group :basic
-  :known-bug true
   :desc "only layout differs: #::s{:b 1} matches"
   :file "(ns n (:require [x.y :as s]))\n(def x #::s{:b 1})\n"
   :old "#::s{:b   1}"
   :new "{}"
-  :expect {:exit 0 :file "(ns n (:require [x.y :as s]))\n(def x {})\n"}
-  :interim {:exit 1 :output "IllegalArgumentException"}}
+  :expect {:exit 0 :file "(ns n (:require [x.y :as s]))\n(def x {})\n"}}
 
  {:id :namespaced-map-qualifier-differs
   :group :basic
-  :known-bug true
   :desc "#:c{:b 1} is no match for #:a{:b 1}"
   :file "(def x #:a{:b 1})\n"
   :old "#:c{:b 1}"
   :new "{}"
-  :expect {:exit 2}
-  :interim {:exit 1 :output "IllegalArgumentException"}}
+  :expect {:exit 2}}
 
  ;; ------------------------------------------ crash: unguarded old sexpr
 

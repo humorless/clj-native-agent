@@ -25,9 +25,14 @@
   (into [] (remove layout?) (n/children nd)))
 
 (defn delimiters
-  "The node's own text without its children, e.g. \"()\" or \"#()\"."
+  "The node's own text without its children, e.g. \"()\" or \"#()\".
+  Some nodes cannot render without children (a namespaced map needs its
+  qualifier and map); their text lives entirely in the children, which
+  are compared anyway, so they have no delimiters of their own."
   [nd]
-  (n/string (n/replace-children nd [])))
+  (try
+    (n/string (n/replace-children nd []))
+    (catch Exception _ ::children-only)))
 
 (defn leaf-text [nd]
   (if (= :comment (n/tag nd))
