@@ -1,0 +1,5 @@
+{:tasks
+ {test {:doc "Run clj-replace regression cases"
+        :task (shell "bb skills/clj-replace/test/run.bb")}
+  corpus {:doc "Run the clj-replace corpus property test: bb corpus [--sample N] [--seed S] <dir>..."
+          :task (apply shell "bb skills/clj-replace/test/corpus.bb" *command-line-args*)}}}

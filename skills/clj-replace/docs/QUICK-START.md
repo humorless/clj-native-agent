@@ -198,12 +198,13 @@ bb clj-replace.bb file.clj "[x 2]" "[y 2]"
 
 ### Error: "old-string not found"
 
-**Cause:** The exact S-expression structure doesn't exist.
+**Cause:** No form in the file is written like `old-string` (exit 2). Only layout is ignored; tokens, reader syntax, metadata, `#_` forms, map order and comments must match.
 
 **Solution:** 
-- Check that your code is valid Clojure
-- Ensure you're using the exact same structure as in the file
-- Try simpler patterns first
+- Re-read the file and copy the form as it is written there
+- Try a smaller form first
+
+If instead you get exit 4 ("No exact match ... same value"), the error prints the file's exact text: retry with that text as `old-string`.
 
 ```bash
 # Try this simpler pattern first:

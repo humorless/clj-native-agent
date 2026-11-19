@@ -1,0 +1,889 @@
+;; Regression cases for clj-replace.bb, run by test/run.bb.
+;;
+;; Keys:
+;;   :id          unique keyword, also the temp file name
+;;   :group       :basic | :false-negative | :false-positive | :crash | :input
+;;   :desc        one line: what the case checks
+;;   :file        file content before the run
+;;   :old :new    the two arguments passed to clj-replace.bb
+;;   omit :file from :expect on a non-zero exit to require the file to be
+;;   unchanged
+;;   :expect      {:exit n :file "..." :output "regex"}; :file and
+;;                :output are optional
+;;   :known-bug   true when :expect is the correct behaviour but the
+;;                script does not do it yet (expected failure)
+;;   :interim     same shape as :expect: what a known-bug case does today
+;;   :issue       GitHub issue number, when there is one
+;;   :source      where a mined case came from (eastwood, splint)
+;;   :missing-file? true to run without creating the file
+
+[;; ---------------------------------------------------------------- basic
+
+ {:id :whitespace-insensitive
+  :group :basic
+  :desc "extra spaces and newlines in the file do not prevent a match"
+  :file "(defn f [db id attrs]\n  (merge-user  db\n    id   attrs))\n"
+  :old "(merge-user db id attrs)"
+  :new "(update-user db id attrs)"
+  :expect {:exit 0 :file "(defn f [db id attrs]\n  (update-user db id attrs))\n"}}
+
+ {:id :multiline-old
+  :group :basic
+  :desc "a one-line old string matches a form spread over several lines"
+  :file "(some-function\n  arg1\n  arg2\n  arg3)\n"
+  :old "(some-function arg1 arg2 arg3)"
+  :new "(other-function arg1 arg2 arg3)"
+  :expect {:exit 0 :file "(other-function arg1 arg2 arg3)\n"}}
+
+ {:id :nested-form
+  :group :basic
+  :desc "only the matched inner form is replaced"
+  :file "(defn f [x]\n  (let [y (inc x)]\n    (* y 2)))\n"
+  :old "(inc x)"
+  :new "(dec x)"
+  :expect {:exit 0 :file "(defn f [x]\n  (let [y (dec x)]\n    (* y 2)))\n"}}
+
+ {:id :preserve-surroundings
+  :group :basic
+  :desc "comments and formatting outside the matched form are kept"
+  :file ";; header comment\n(defn f []\n  ;; inside\n  (foo 1)) ; trailing\n\n(bar)\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 0 :file ";; header comment\n(defn f []\n  ;; inside\n  (foo 2)) ; trailing\n\n(bar)\n"}}
+
+ {:id :top-level-form
+  :group :basic
+  :desc "a whole top-level form can be replaced"
+  :file "(ns a)\n\n(def x 1)\n\n(def y 2)\n"
+  :old "(def x 1)"
+  :new "(def x 10)"
+  :expect {:exit 0 :file "(ns a)\n\n(def x 10)\n\n(def y 2)\n"}}
+
+ {:id :single-symbol
+  :group :basic
+  :desc "a single token can be the old string"
+  :file "(defn handler [req] (respond))\n"
+  :old "req"
+  :new "request"
+  :expect {:exit 0 :file "(defn handler [request] (respond))\n"}}
+
+ {:id :string-literal
+  :group :basic
+  :desc "string literals compare by content"
+  :file "(println \"hello  world\")\n"
+  :old "\"hello  world\""
+  :new "\"hi\""
+  :expect {:exit 0 :file "(println \"hi\")\n"}}
+
+ {:id :regex-literal
+  :group :basic
+  :desc "forms containing a regex literal match"
+  :file "(def r (re-find #\"\\d+\" s))\n"
+  :old "(re-find #\"\\d+\" s)"
+  :new "(re-seq #\"\\d+\" s)"
+  :expect {:exit 0 :file "(def r (re-seq #\"\\d+\" s))\n"}}
+
+ {:id :new-with-anon-fn
+  :group :basic
+  :desc "a new string containing #() is written verbatim"
+  :file "(def xs (map inc ys))\n"
+  :old "(map inc ys)"
+  :new "(map #(+ % 1) ys)"
+  :expect {:exit 0 :file "(def xs (map #(+ % 1) ys))\n"}}
+
+ {:id :ambiguous
+  :group :basic
+  :desc "two identical forms give exit 3 and no change"
+  :file "(foo bar)\n(baz (foo bar))\n"
+  :old "(foo bar)"
+  :new "(qux)"
+  :expect {:exit 3 :output "Found 2 matching S-expressions in .*\\(ambiguous\\)\\n  1\\. line 1, column 1: \\(foo bar\\)\\n  2\\. line 2, column 6: \\(foo bar\\)\\nPlease provide a more specific old-string"}}
+
+ {:id :ambiguous-in-comment
+  :group :basic
+  :desc "a form inside (comment ...) still counts as a match"
+  :file "(comment (foo))\n(foo)\n"
+  :old "(foo)"
+  :new "(bar)"
+  :expect {:exit 3}}
+
+ {:id :no-match
+  :group :basic
+  :desc "an absent form gives exit 2 and no change"
+  :file "(def x 1)\n"
+  :old "(def y 1)"
+  :new "(def y 2)"
+  :expect {:exit 2 :output "✗ Error: No matching S-expression found in "}}
+
+ {:id :old-parse-error
+  :group :basic
+  :desc "an unbalanced old string gives exit 1"
+  :file "(def x 1)\n"
+  :old "(def x 1"
+  :new "(def x 2)"
+  :expect {:exit 1 :output "✗ old-string parse error: "}}
+
+ {:id :new-parse-error
+  :group :basic
+  :desc "an unbalanced new string gives exit 1"
+  :file "(def x 1)\n"
+  :old "(def x 1)"
+  :new "(def x 2"
+  :expect {:exit 1 :output "✗ new-string parse error: "}}
+
+ {:id :file-not-found
+  :group :basic
+  :desc "a missing file gives exit 1"
+  :missing-file? true
+  :old "(def x 1)"
+  :new "(def x 2)"
+  :expect {:exit 1 :file nil :output "✗ Error: File not found: "}}
+
+ {:id :success-output
+  :group :basic
+  :desc "success output: count, file, location, old and new"
+  :file "(defn f []\n  (foo 1))\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 0
+           :file "(defn f []\n  (foo 2))\n"
+           :output "✓ Replaced 1 node\\(s\\) in \\S+success-output\\.clj\n  Location: line 2, column 3\n  Old: \\(foo 1\\)\n  New: \\(foo 2\\)"}}
+
+ {:id :usage-no-args
+  :group :basic
+  :desc "no arguments print usage and exit 1"
+  :args []
+  :file "(def x 1)\n"
+  :expect {:exit 1 :output "Usage: clj-replace.bb <filename> <old-string> <new-string>"}}
+
+ {:id :usage-missing-new
+  :group :basic
+  :desc "a missing new-string prints usage and exit 1"
+  :args ["%FILE" "(def x 1)"]
+  :file "(def x 1)\n"
+  :expect {:exit 1 :output "Usage:"}}
+
+ {:id :text-only-in-comment
+  :group :basic
+  :desc "old text that appears only in a comment is no match (exit 2), not a limitation (exit 4)"
+  :file ";; (foo 1)\n(bar)\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 2 :output "No matching"}}
+
+ {:id :text-only-in-string
+  :group :basic
+  :desc "old text that appears only inside a string literal is no match (exit 2)"
+  :file "(def s \"(foo 1)\")\n"
+  :old "(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 2 :output "No matching"}}
+
+ ;; -------------------------------------- basic: reader syntax from corpora
+ ;; Mined from eastwood (github.com/jonase/eastwood) and splint
+ ;; (github.com/NoahTheDuke/splint); :source names where the shape came from.
+
+ {:id :char-literals
+  :group :basic
+  :source "splint test strings, eastwood cases"
+  :desc "named, unicode and plain character literals match themselves"
+  :file "(def cs [\\newline \\space \\u00e9 \\a])\n"
+  :old "[\\newline \\space \\u00e9 \\a]"
+  :new "[]"
+  :expect {:exit 0 :file "(def cs [])\n"}}
+
+ {:id :char-vs-string
+  :group :basic
+  :desc "a character literal does not match a one-char string"
+  :file "(def c \\a)\n"
+  :old "(def c \"a\")"
+  :new "(def c nil)"
+  :expect {:exit 2}}
+
+ {:id :ratio
+  :group :basic
+  :desc "ratio literals match themselves"
+  :file "(def r 1/2)\n"
+  :old "(def r 1/2)"
+  :new "(def r 0)"
+  :expect {:exit 0 :file "(def r 0)\n"}}
+
+ {:id :bigdec-vs-double
+  :group :basic
+  :desc "1.5M does not match 1.5"
+  :file "(def d 1.5M)\n"
+  :old "(def d 1.5)"
+  :new "(def d 0)"
+  :expect {:exit 2}}
+
+ {:id :inf
+  :group :basic
+  :desc "##Inf matches itself (unlike ##NaN, Inf is = to itself)"
+  :file "(def i ##Inf)\n"
+  :old "(def i ##Inf)"
+  :new "(def i 0)"
+  :expect {:exit 0 :file "(def i 0)\n"}}
+
+ {:id :string-escape
+  :group :basic
+  :desc "strings with escape sequences match themselves"
+  :file "(def s \"a\\nb\")\n"
+  :old "(def s \"a\\nb\")"
+  :new "(def s \"\")"
+  :expect {:exit 0 :file "(def s \"\")\n"}}
+
+ {:id :method-value
+  :group :basic
+  :source "splint dev/noahtheduke/splint/dev.clj"
+  :desc "Clojure 1.12 qualified method values (String/.length) match themselves"
+  :file "(map String/.length xs)\n"
+  :old "(map String/.length xs)"
+  :new "(map count xs)"
+  :expect {:exit 0 :file "(map count xs)\n"}}
+
+ {:id :tagged-uuid
+  :group :basic
+  :desc "#uuid tagged literals match themselves"
+  :file "(def u #uuid \"00000000-0000-0000-0000-000000000000\")\n"
+  :old "(def u #uuid \"00000000-0000-0000-0000-000000000000\")"
+  :new "(def u nil)"
+  :expect {:exit 0 :file "(def u nil)\n"}}
+
+ {:id :reader-cond-splice
+  :group :basic
+  :source "splint src/noahtheduke/splint/clojure_ext/core.cljc"
+  :desc "a form containing #?@ matches itself"
+  :file "(def v [#?@(:clj [1 2] :cljs [3])])\n"
+  :old "(def v [#?@(:clj [1 2] :cljs [3])])"
+  :new "(def v [])"
+  :expect {:exit 0 :file "(def v [])\n"}}
+
+ {:id :reader-cond-splice-target
+  :group :basic
+  :source "splint src/noahtheduke/splint/clojure_ext/core.cljc"
+  :desc "a #?@ node inside ns :require can be the target"
+  :file "(ns a (:require #?@(:clj [[b.c :as c]])))\n"
+  :old "#?@(:clj [[b.c :as c]])"
+  :new "#?@(:clj [[b.d :as c]])"
+  :expect {:exit 0 :file "(ns a (:require #?@(:clj [[b.d :as c]])))\n"}}
+
+ {:id :deref-self
+  :group :basic
+  :source "splint corpus/special_characters.clj"
+  :desc "@a matches itself"
+  :file "(def v @a)\n(def w @(a))\n"
+  :old "(def w @(a))"
+  :new "(def w nil)"
+  :expect {:exit 0 :file "(def v @a)\n(def w nil)\n"}}
+
+ {:id :syntax-quote-unquote-self
+  :group :basic
+  :source "splint corpus/special_characters.clj"
+  :desc "syntax-quote with ~ and ~@ matches itself"
+  :file "(defmacro m [a b] `(f ~a ~@b))\n"
+  :old "`(f ~a ~@b)"
+  :new "`(g ~a ~@b)"
+  :expect {:exit 0 :file "(defmacro m [a b] `(g ~a ~@b))\n"}}
+
+ {:id :eval-reader-self
+  :group :basic
+  :source "splint corpus/special_characters.clj"
+  :desc "#=(...) matches itself"
+  :file "(def x #=(+ 1 2))\n"
+  :old "(def x #=(+ 1 2))"
+  :new "(def x 3)"
+  :expect {:exit 0 :file "(def x 3)\n"}}
+
+ {:id :auto-keyword-vs-qualified
+  :group :basic
+  :desc "::id does not match :foo/id (no namespace resolution)"
+  :file "(ns foo)\n(def k ::id)\n"
+  :old "(def k :foo/id)"
+  :new "(def k nil)"
+  :expect {:exit 2}}
+
+ {:id :comma-is-whitespace
+  :group :basic
+  :desc "commas are whitespace, so {:a 1, :b 2} matches {:a 1 :b 2}"
+  :file "(def m {:a 1, :b 2})\n"
+  :old "(def m {:a 1 :b 2})"
+  :new "(def m {})"
+  :expect {:exit 0 :file "(def m {})\n"}}
+
+ {:id :discard-inside-old
+  :group :basic
+  :desc "an old string containing #_ matches the same text"
+  :file "(do #_(foo 1) (bar))\n"
+  :old "(do #_(foo 1) (bar))"
+  :new "(do (bar))"
+  :expect {:exit 0 :file "(do (bar))\n"}}
+
+ {:id :deref-vs-deref-form
+  :group :basic
+  :desc "(deref a) does not match @a"
+  :file "(def v @a)\n"
+  :old "(def v (deref a))"
+  :new "(def v nil)"
+  :expect {:exit 2}}
+
+ ;; ------------------------------------------- false negative: should match
+
+ {:id :anon-fn
+  :group :false-negative
+  :issue 3
+  :desc "a form containing #() matches itself (gensym names differ per z/sexpr call)"
+  :file "(def keep-md (filter #(str/ends-with? % \".md\") xs))\n"
+  :old "(def keep-md (filter #(str/ends-with? % \".md\") xs))"
+  :new "(def keep-md (filter (fn [p] (str/ends-with? p \".md\")) xs))"
+  :expect {:exit 0 :file "(def keep-md (filter (fn [p] (str/ends-with? p \".md\")) xs))\n"}}
+
+ {:id :anon-fn-rest-arg
+  :group :false-negative
+  :issue 3
+  :desc "#() with %& (rest__N# gensym) matches itself"
+  :file "(f #(apply + % %&))\n"
+  :old "(f #(apply + % %&))"
+  :new "(f +)"
+  :expect {:exit 0 :file "(f +)\n"}}
+
+ {:id :anon-fn-arg-order
+  :group :false-negative
+  :issue 3
+  :desc "#(+ %2 %1) matches only itself, not #(+ %1 %2)"
+  :file "(map #(+ %1 %2) a b)\n(map #(+ %2 %1) a b)\n"
+  :old "(map #(+ %2 %1) a b)"
+  :new "(map - a b)"
+  :expect {:exit 0 :file "(map #(+ %1 %2) a b)\n(map - a b)\n"}}
+
+ {:id :anon-fn-in-syntax-quote
+  :group :false-negative
+  :desc "#() inside a syntax-quoted macro body matches itself"
+  :file "(defmacro m [] `(map #(inc %) xs))\n"
+  :old "(defmacro m [] `(map #(inc %) xs))"
+  :new "(defmacro m [] 1)"
+  :expect {:exit 0 :file "(defmacro m [] 1)\n"}}
+
+ {:id :nan
+  :group :false-negative
+  :desc "##NaN matches itself (NaN is not = to NaN)"
+  :file "(def x (max ##NaN 1))\n"
+  :old "(max ##NaN 1)"
+  :new "(max 0 1)"
+  :expect {:exit 0 :file "(def x (max 0 1))\n"}}
+
+ {:id :nan-in-vector
+  :group :false-negative
+  :desc "##NaN nested in a collection matches itself"
+  :file "(def v [##NaN])\n"
+  :old "(def v [##NaN])"
+  :new "(def v [])"
+  :expect {:exit 0 :file "(def v [])\n"}}
+
+ ;; ------------------------------- false positive: must not match silently
+
+ {:id :metadata-ignored
+  :group :false-positive
+  :desc "(defn f ...) must not match (defn ^:private f ...): replacing drops the metadata"
+  :file "(defn ^:private f [] 1)\n"
+  :old "(defn f [] 1)"
+  :new "(defn f [] 2)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(defn \\^:private f \\[\\] 1\\)"}}
+
+ {:id :metadata-ambiguous
+  :group :false-positive
+  :desc "with and without metadata are different forms, so the match is unique"
+  :file "(defn f [] 1)\n(defn ^:private f [] 1)\n"
+  :old "(defn ^:private f [] 1)"
+  :new "(defn g [] 1)"
+  :expect {:exit 0 :file "(defn f [] 1)\n(defn g [] 1)\n"}}
+
+ {:id :discard-ignored
+  :group :false-positive
+  :desc "[1 3] must not match [1 #_2 3]: replacing deletes the discarded code"
+  :file "(def x [1 #_2 3])\n"
+  :old "(def x [1 3])"
+  :new "(def x [1 3 4])"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def x \\[1 #_2 3\\]\\)"}}
+
+ {:id :vector-vs-list
+  :group :false-positive
+  :desc "a list must not match a vector with the same elements"
+  :file "(let [a 1] a)\n"
+  :old "(let (a 1) a)"
+  :new "(let [b 1] b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(let \\[a 1\\] a\\)"}}
+
+ {:id :long-vs-bigint
+  :group :false-positive
+  :desc "1 must not match 1N"
+  :file "(def a 1N)\n"
+  :old "(def a 1)"
+  :new "(def a 2)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def a 1N\\)"}}
+
+ ;; --------------------------- false positive: mined from eastwood / splint
+
+ {:id :quote-vs-syntax-quote
+  :group :false-positive
+  :source "eastwood src/eastwood/linters/implicit_dependencies.clj:32"
+  :desc "'require must not match `require (syntax-quote resolves the symbol)"
+  :file "(def r `require)\n"
+  :old "(def r 'require)"
+  :new "(def r nil)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def r `require\\)"}}
+
+ {:id :empty-list-vs-vector
+  :group :false-positive
+  :source "eastwood cases/testcases/constanttestexpr.clj:17"
+  :desc "() must not match []"
+  :file "(def e [])\n"
+  :old "(def e ())"
+  :new "(def e nil)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def e \\[\\]\\)"}}
+
+ {:id :type-hint-arg
+  :group :false-positive
+  :source "eastwood src/eastwood/lint.clj:322"
+  :desc "[f] must not match [^File f]: replacing drops the type hint"
+  :file "(defn f [^File f] f)\n"
+  :old "(defn f [f] f)"
+  :new "(defn f [g] g)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(defn f \\[\\^File f\\] f\\)"}}
+
+ {:id :type-hint-deref
+  :group :false-positive
+  :source "eastwood copied-deps/.../clojure/core/memoize.clj:128"
+  :desc "@cache must not match ^Foo @cache"
+  :file "(def c ^Foo @cache)\n"
+  :old "(def c @cache)"
+  :new "(def c nil)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def c \\^Foo @cache\\)"}}
+
+ ;; ---------------- false positive: same value, different spelling
+ ;; Decision 2026-11-19: clj-replace ignores layout only (whitespace,
+ ;; commas, line breaks), so a different spelling of the same value is
+ ;; no match. When the value is the same, it reports a near match: exit 4
+ ;; with the location and the file's own text, so old-string can be
+ ;; retried with that text.
+
+ {:id :map-key-order
+  :group :false-positive
+  :source "eastwood resource/var-info.edn:756"
+  :desc "a map literal with keys in another order is no match"
+  :file "(def m {:a 1 :b 2})\n"
+  :old "(def m {:b 2 :a 1})"
+  :new "(def m {})"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def m \\{:a 1 :b 2\\}\\)"}}
+
+ {:id :set-order
+  :group :false-positive
+  :source "eastwood src/eastwood/linters/typos.clj:932"
+  :desc "a set literal with elements in another order is no match"
+  :file "(def s #{'fn 'clojure.core/fn})\n"
+  :old "(def s #{'clojure.core/fn 'fn})"
+  :new "(def s #{})"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def s #\\{'fn 'clojure\\.core/fn\\}\\)"}}
+
+ {:id :quote-vs-quote-form
+  :group :false-positive
+  :source "splint test/noahtheduke/splint/pattern_test.clj:33"
+  :desc "(quote x) does not match 'x"
+  :file "(def l '(1 2 3))\n"
+  :old "(def l (quote (1 2 3)))"
+  :new "(def l nil)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def l '\\(1 2 3\\)\\)"}}
+
+ {:id :var-quote-vs-var-form
+  :group :false-positive
+  :desc "(var a) does not match #'a"
+  :file "(def v #'a)\n"
+  :old "(def v (var a))"
+  :new "(def v nil)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def v #'a\\)"}}
+
+ {:id :hex-vs-decimal
+  :group :false-positive
+  :desc "255 does not match 0xFF"
+  :file "(def n 0xFF)\n"
+  :old "(def n 255)"
+  :new "(def n 0)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def n 0xFF\\)"}}
+
+ {:id :radix-vs-decimal
+  :group :false-positive
+  :desc "10 does not match 2r1010"
+  :file "(def n 2r1010)\n"
+  :old "(def n 10)"
+  :new "(def n 0)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def n 2r1010\\)"}}
+
+ {:id :float-spelling
+  :group :false-positive
+  :desc "1.00 does not match 1.0"
+  :file "(def d 1.0)\n"
+  :old "(def d 1.00)"
+  :new "(def d 0)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def d 1\\.0\\)"}}
+
+ {:id :string-newline-vs-escape
+  :group :false-positive
+  :desc "a string with \\n does not match one with a literal line break"
+  :file "(def s \"a\nb\")\n"
+  :old "(def s \"a\\nb\")"
+  :new "(def s \"\")"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(def s \"a\nb\"\\)"}}
+
+ {:id :comment-inside
+  :group :false-positive
+  :source "eastwood copied-deps/.../clojure/data/priority_map.clj:353"
+  :desc "a form with an inner ; comment does not match one without: replacing deletes the comment"
+  :file "(or (keyword? x) ; note\n    (= 1 n))\n"
+  :old "(or (keyword? x) (= 1 n))"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or \\(keyword\\? x\\) ; note\n    \\(= 1 n\\)\\)"}}
+
+ {:id :string-inner-whitespace
+  :group :false-positive
+  :desc "whitespace inside a string literal is content: \"a b\" is no match for \"a  b\" (exit 2, not a near match)"
+  :file "(f \"a  b\")\n"
+  :old "(f \"a b\")"
+  :new "(g)"
+  :expect {:exit 2 :output "No matching"}}
+
+ ;; -------------------------------- input: old/new with several forms
+
+ {:id :multi-form-old
+  :group :input
+  :desc "an old string with two forms is rejected, not matched by its first form alone"
+  :file "(a)\n(b)\n"
+  :old "(a) (c)"
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ {:id :multi-form-new
+  :group :input
+  :desc "a new string with two forms is rejected, not cut to its first form"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new "(x) (y)"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ {:id :blank-old
+  :group :input
+  :desc "an old string with no form is rejected"
+  :file "(a)\n"
+  :old "   "
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ {:id :comment-only-old
+  :group :input
+  :desc "an old string holding only a comment is rejected"
+  :file "(a)\n"
+  :old "; just a comment"
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ {:id :form-plus-comment-old
+  :group :input
+  :desc "an old string with a form and a top-level comment is rejected (the comment would stay in the file)"
+  :file "(a) ; why\n(b)\n"
+  :old "(a) ; why"
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ {:id :blank-new-deletes
+  :group :basic
+  :desc "a blank new string deletes the matched form"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new ""
+  :expect {:exit 0 :file "\n(b)\n"}}
+
+ {:id :comment-only-new
+  :group :input
+  :desc "a new string holding only a comment is rejected"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new "; gone"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ {:id :form-plus-comment-new
+  :group :input
+  :desc "a new string with a form and a top-level comment is rejected, not cut to the form"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new "(x) ; why"
+  :expect {:exit 1 :output "exactly one form"}}
+
+ ;; ------------------------------------------------ comments are content
+ ;; Comments must be equal and in the same place; only trailing
+ ;; whitespace at the end of a comment line is ignored.
+
+ {:id :comment-same
+  :group :basic
+  :desc "the same inner comment with different indentation matches"
+  :file "(or a ; note\n    b)\n"
+  :old "(or a ; note\n b)"
+  :new "(and a b)"
+  :expect {:exit 0 :file "(and a b)\n"}}
+
+ {:id :comment-trailing-whitespace
+  :group :basic
+  :desc "trailing whitespace at the end of a comment line is ignored"
+  :file "(or a ; note   \n    b)\n"
+  :old "(or a ; note\n b)"
+  :new "(and a b)"
+  :expect {:exit 0 :file "(and a b)\n"}}
+
+ {:id :comment-text-differs
+  :group :false-positive
+  :desc "a different comment text is a near match"
+  :file "(or a ; note\n    b)\n"
+  :old "(or a ; other\n b)"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or a ; note\n    b\\)"}}
+
+ {:id :comment-inner-space
+  :group :false-positive
+  :desc "an extra space inside a comment is a near match"
+  :file "(or a ; a  b\n    b)\n"
+  :old "(or a ; a b\n b)"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or a ; a  b\n    b\\)"}}
+
+ {:id :comment-moved
+  :group :false-positive
+  :desc "the same comment in another place is a near match"
+  :file "(or a ; note\n    b)\n"
+  :old "(or a b ; note\n)"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or a ; note\n    b\\)"}}
+
+ ;; ------------------------------------------ from code review 2026-11-19
+
+ {:id :file-parse-error
+  :group :input
+  :desc "a file that does not parse gives a clear exit 1, not a stack trace"
+  :file "(defn f [] (foo)\n(bar\n"
+  :old "(foo)"
+  :new "(baz)"
+  :expect {:exit 1 :output "file parse error"}}
+
+ {:id :anon-fn-near-match
+  :group :false-positive
+  :desc "a #() form that differs only by a comment is a near match (gensyms must not hide it)"
+  :file "(map #(inc ;; c\n       %) xs)\n"
+  :old "(map #(inc %) xs)"
+  :new "(map inc xs)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(map #\\(inc ;; c\n       %\\) xs\\)"}}
+
+ {:id :comma-only-new-deletes
+  :group :basic
+  :desc "a new string of only commas and whitespace is blank: it deletes, like whitespace"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new " , "
+  :expect {:exit 0 :file "\n(b)\n"}}
+
+ ;; ------------------------------------- every rewrite-clj inner node tag
+ ;; Each kind of node must match itself when only layout differs. Added
+ ;; after code review found that the delimiter check crashed on
+ ;; namespaced maps, which no case covered.
+
+ {:id :layout-list
+  :group :basic
+  :desc "only layout differs: (a b) matches"
+  :file "(def x (a b))\n"
+  :old "(a   b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-vector
+  :group :basic
+  :desc "only layout differs: [ a b ] matches"
+  :file "(def x [a b])\n"
+  :old "[ a  b ]"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-map
+  :group :basic
+  :desc "only layout differs: { :a 1 } matches"
+  :file "(def x {:a 1})\n"
+  :old "{ :a   1 }"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-set
+  :group :basic
+  :desc "only layout differs: #{a b} matches"
+  :file "(def x #{a b})\n"
+  :old "#{a   b}"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-fn
+  :group :basic
+  :desc "only layout differs: #(f %) matches"
+  :file "(def x #(f %))\n"
+  :old "#(f   %)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-meta
+  :group :basic
+  :desc "only layout differs: ^:x y matches"
+  :file "(def ^:x y 1)\n"
+  :old "^:x   y"
+  :new "z"
+  :expect {:exit 0 :file "(def z 1)\n"}}
+
+ {:id :layout-meta-legacy
+  :group :basic
+  :desc "only layout differs: #^:x y matches"
+  :file "(def #^:x y 1)\n"
+  :old "#^:x   y"
+  :new "z"
+  :expect {:exit 0 :file "(def z 1)\n"}}
+
+ {:id :layout-uneval
+  :group :basic
+  :desc "only layout differs: #_ 2 matches"
+  :file "(def x [1 #_2])\n"
+  :old "#_   2"
+  :new "3"
+  :expect {:exit 0 :file "(def x [1 3])\n"}}
+
+ {:id :layout-quote
+  :group :basic
+  :desc "only layout differs: '(a b) matches"
+  :file "(def x '(a b))\n"
+  :old "'(a   b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-syntax-quote
+  :group :basic
+  :desc "only layout differs: `(a b) matches"
+  :file "(def x `(a b))\n"
+  :old "`(a   b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-unquote
+  :group :basic
+  :desc "only layout differs: ~(g a) matches"
+  :file "(def x `(f ~(g a)))\n"
+  :old "~(g   a)"
+  :new "~b"
+  :expect {:exit 0 :file "(def x `(f ~b))\n"}}
+
+ {:id :layout-unquote-splicing
+  :group :basic
+  :desc "only layout differs: ~@(g a) matches"
+  :file "(def x `(f ~@(g a)))\n"
+  :old "~@(g   a)"
+  :new "~@b"
+  :expect {:exit 0 :file "(def x `(f ~@b))\n"}}
+
+ {:id :layout-deref
+  :group :basic
+  :desc "only layout differs: @(f a) matches"
+  :file "(def x @(f a))\n"
+  :old "@(f   a)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-var
+  :group :basic
+  :desc "only layout differs: (def y #'b) matches"
+  :file "(def x #'a)\n(def y #'b)\n"
+  :old "(def y   #'b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x #'a)\nnil\n"}}
+
+ {:id :layout-eval
+  :group :basic
+  :desc "only layout differs: #=(+ 1 2) matches"
+  :file "(def x #=(+ 1 2))\n"
+  :old "#=(+   1 2)"
+  :new "3"
+  :expect {:exit 0 :file "(def x 3)\n"}}
+
+ {:id :layout-reader-cond
+  :group :basic
+  :desc "only layout differs: #?(:clj 1 :cljs 2) matches"
+  :file "(def x #?(:clj 1 :cljs 2))\n"
+  :old "#?(:clj   1 :cljs 2)"
+  :new "1"
+  :expect {:exit 0 :file "(def x 1)\n"}}
+
+ {:id :layout-tagged-literal
+  :group :basic
+  :desc "only layout differs: #inst \"2020-01-01\" matches"
+  :file "(def x #inst \"2020-01-01\")\n"
+  :old "#inst   \"2020-01-01\""
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-namespaced-map
+  :group :basic
+  :desc "only layout differs: #:a{:b 1} matches"
+  :file "(def x #:a{:b 1})\n"
+  :old "#:a{:b   1}"
+  :new "{}"
+  :expect {:exit 0 :file "(def x {})\n"}}
+
+ {:id :layout-namespaced-map-nested
+  :group :basic
+  :desc "only layout differs: (f #:a{:b 1}) matches"
+  :file "(f #:a{:b 1})\n"
+  :old "(f   #:a{:b  1})"
+  :new "(g)"
+  :expect {:exit 0 :file "(g)\n"}}
+
+ {:id :layout-auto-namespaced-map
+  :group :basic
+  :desc "only layout differs: #::{:b 1} matches"
+  :file "(ns n)\n(def x #::{:b 1})\n"
+  :old "#::{:b   1}"
+  :new "{}"
+  :expect {:exit 0 :file "(ns n)\n(def x {})\n"}}
+
+ {:id :layout-alias-namespaced-map
+  :group :basic
+  :desc "only layout differs: #::s{:b 1} matches"
+  :file "(ns n (:require [x.y :as s]))\n(def x #::s{:b 1})\n"
+  :old "#::s{:b   1}"
+  :new "{}"
+  :expect {:exit 0 :file "(ns n (:require [x.y :as s]))\n(def x {})\n"}}
+
+ {:id :namespaced-map-qualifier-differs
+  :group :basic
+  :desc "#:c{:b 1} is no match for #:a{:b 1}"
+  :file "(def x #:a{:b 1})\n"
+  :old "#:c{:b 1}"
+  :new "{}"
+  :expect {:exit 2}}
+
+ ;; ------------------------------------------ crash: unguarded old sexpr
+
+ {:id :discard-as-old-keyword
+  :group :crash
+  :source "eastwood copied-deps/.../clojure/tools/analyzer.clj:825, splint corpus/arglists.clj:47"
+  :desc "an old string that is a #_ form is replaced, not a stack trace"
+  :file "(cond a 1\n  #_:else :default 2)\n"
+  :old "#_:else"
+  :new ":else"
+  :expect {:exit 0 :file "(cond a 1\n  :else :default 2)\n"}}
+
+ {:id :discard-as-old-form
+  :group :crash
+  :source "splint test/.../prefer_clj_string_test.clj:41"
+  :desc "a discarded form can be the target"
+  :file "(do #_(foo 1) (bar))\n"
+  :old "#_(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 0 :file "(do (foo 2) (bar))\n"}
+  :interim {:exit 1 :output "unsupported operation"}}]
