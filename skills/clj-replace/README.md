@@ -60,6 +60,7 @@ bb clj-replace.bb <filename> <old-string> <new-string>
 - `1` — Parse error (invalid Clojure or file not found)
 - `2` — No match found
 - `3` — Multiple matches found (ambiguous)
+- `4` — old-string is in the file but cannot be matched structurally (e.g. `#()`, `##NaN`); use a plain text edit
 
 See [`SKILL.md`](SKILL.md) for full documentation.
 

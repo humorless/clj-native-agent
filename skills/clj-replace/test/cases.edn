@@ -164,7 +164,7 @@
 
  {:id :text-only-in-comment
   :group :basic
-  :desc "old text that appears only in a comment is no match (exit 2)"
+  :desc "old text that appears only in a comment is no match (exit 2), not a limitation (exit 4)"
   :file ";; (foo 1)\n(bar)\n"
   :old "(foo 1)"
   :new "(foo 2)"
@@ -189,7 +189,7 @@
   :old "(def keep-md (filter #(str/ends-with? % \".md\") xs))"
   :new "(def keep-md (filter (fn [p] (str/ends-with? p \".md\")) xs))"
   :expect {:exit 0 :file "(def keep-md (filter (fn [p] (str/ends-with? p \".md\")) xs))\n"}
-  :interim {:exit 2 :output "No matching"}}
+  :interim {:exit 4 :output "limitation"}}
 
  {:id :anon-fn-rest-arg
   :group :false-negative
@@ -200,7 +200,7 @@
   :old "(f #(apply + % %&))"
   :new "(f +)"
   :expect {:exit 0 :file "(f +)\n"}
-  :interim {:exit 2 :output "No matching"}}
+  :interim {:exit 4 :output "limitation"}}
 
  {:id :anon-fn-arg-order
   :group :false-negative
@@ -211,7 +211,7 @@
   :old "(map #(+ %2 %1) a b)"
   :new "(map - a b)"
   :expect {:exit 0 :file "(map #(+ %1 %2) a b)\n(map - a b)\n"}
-  :interim {:exit 2 :output "No matching"}}
+  :interim {:exit 4 :output "line 2, column 1"}}
 
  {:id :anon-fn-in-syntax-quote
   :group :false-negative
@@ -221,7 +221,7 @@
   :old "(defmacro m [] `(map #(inc %) xs))"
   :new "(defmacro m [] 1)"
   :expect {:exit 0 :file "(defmacro m [] 1)\n"}
-  :interim {:exit 2 :output "No matching"}}
+  :interim {:exit 4 :output "limitation"}}
 
  {:id :nan
   :group :false-negative
@@ -231,7 +231,7 @@
   :old "(max ##NaN 1)"
   :new "(max 0 1)"
   :expect {:exit 0 :file "(def x (max 0 1))\n"}
-  :interim {:exit 2 :output "No matching"}}
+  :interim {:exit 4 :output "limitation"}}
 
  {:id :nan-in-vector
   :group :false-negative
@@ -241,7 +241,7 @@
   :old "(def v [##NaN])"
   :new "(def v [])"
   :expect {:exit 0 :file "(def v [])\n"}
-  :interim {:exit 2 :output "No matching"}}
+  :interim {:exit 4 :output "limitation"}}
 
  ;; ------------------------------- false positive: must not match silently
 

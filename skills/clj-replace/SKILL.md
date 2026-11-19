@@ -88,6 +88,7 @@ Matches regardless of how the original is formatted across lines.
 - `1` — Error: file doesn't exist, or `old-string`/`new-string` are invalid Clojure
 - `2` — Error: no matching S-expression found in the file
 - `3` — Error: multiple matching S-expressions found (ambiguous); user must provide more specific `old-string`
+- `4` — Error: `old-string` appears in the file (ignoring whitespace) but the structural comparison failed to match it. This is a clj-replace limitation, not a mistake in `old-string`: do **not** rewrite `old-string`; make the change with a plain text edit (e.g. the Edit tool) instead
 
 ## Output
 
@@ -97,6 +98,14 @@ On success:
   Location: line 42, column 5
   Old: (merge-user db id attrs)
   New: (update-user-in-db db id attrs)
+```
+
+If the text is present but cannot be matched structurally (exit 4):
+```
+✗ Error: old-string appears in path/to/file.clj but the structural comparison failed to match it.
+  line 1, column 1
+This is a clj-replace limitation (e.g. #(), ##NaN), not a typo in old-string.
+Use a plain text edit for this change.
 ```
 
 If multiple matches:

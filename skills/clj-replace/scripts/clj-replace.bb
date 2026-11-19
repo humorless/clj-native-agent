@@ -3,7 +3,8 @@
 (require '[babashka.deps :as deps])
 (deps/add-deps '{:deps {rewrite-clj/rewrite-clj {:mvn/version "1.1.47"}}})
 
-(require '[rewrite-clj.zip :as z])
+(require '[rewrite-clj.zip :as z]
+         '[clojure.string :as str])
 
 (defn parse-safely [code-str label]
   (try
@@ -44,6 +45,23 @@
     (catch Exception _
       (str (z/node z)))))
 
+(defn normalize-whitespace [s]
+  (str/trim (str/replace s #"\s+" " ")))
+
+(defn find-text-matches
+  "Collect nodes whose source text equals old-string up to whitespace.
+  Used only for diagnosis when the structural comparison finds nothing."
+  [z old-string]
+  (let [target (normalize-whitespace old-string)]
+    (loop [z z
+           matches []]
+      (if (z/end? z)
+        matches
+        (recur (z/next z)
+               (if (= target (normalize-whitespace (get-node-string z)))
+                 (conj matches {:z z :loc (find-location z)})
+                 matches))))))
+
 (let [[filename old-string new-string] *command-line-args*]
   (if (or (nil? filename) (nil? old-string) (nil? new-string))
     (do
@@ -77,9 +95,19 @@
 
                 (cond
                   (empty? matches)
-                  (do
-                    (println (str "✗ Error: No matching S-expression found in " filename))
-                    (System/exit 2))
+                  (let [text-matches (find-text-matches file-zip old-string)]
+                    (if (seq text-matches)
+                      (do
+                        (println (str "✗ Error: old-string appears in " filename
+                                      " but the structural comparison failed to match it."))
+                        (doseq [{:keys [loc]} text-matches]
+                          (println (str "  line " (:line loc) ", column " (:column loc))))
+                        (println "This is a clj-replace limitation (e.g. #(), ##NaN), not a typo in old-string.")
+                        (println "Use a plain text edit for this change.")
+                        (System/exit 4))
+                      (do
+                        (println (str "✗ Error: No matching S-expression found in " filename))
+                        (System/exit 2))))
 
                   (> (count matches) 1)
                   (do
