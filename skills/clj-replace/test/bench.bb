@@ -52,9 +52,9 @@
       (number-options a)
       (let [[k parse] (number-options a)
             v (some-> b parse)]
-        (if v
+        (if (and v (not (Double/isNaN (double v))) (pos? v))
           (recur more (assoc opts k v))
-          (usage-error (str a " needs a number"))))
+          (usage-error (str a " needs a positive number"))))
 
       :else (usage-error (str "unknown argument: " a)))))
 

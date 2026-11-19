@@ -64,7 +64,7 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          nproc && lscpu | head -n 15
+          nproc && (lscpu | head -n 15 || true)
           script=skills/clj-replace/scripts/clj-replace.bb
           baseline="$RUNNER_TEMP/baseline.bb"
           git rev-parse --verify "origin/$BASE_REF" > /dev/null
