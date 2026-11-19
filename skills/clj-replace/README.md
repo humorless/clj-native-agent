@@ -80,17 +80,6 @@ Cases marked `:known-bug true` describe correct behaviour the script does not
 have yet; they count as expected failures (XFAIL). When one starts passing the
 run fails with XPASS, so remove its marker.
 
-## Verify It Works
-
-clj-replace includes evaluation tests. To verify the tool works on your system:
-
-```bash
-cd evals/
-bash run-evals.sh
-```
-
-Or manually run the tests described in [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
-
 ## Examples
 
 ### Example 1: Format-Agnostic Rename
