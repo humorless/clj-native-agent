@@ -904,13 +904,11 @@
 
  {:id :literal-fn-in-file-not-near
   :group :basic
-  :known-bug true
   :desc "a hand-written (fn* [%0] ...) in the file is not a near match for #() (gensym placeholders must not collide with readable symbols)"
   :file "(f (fn* [%0] (g %0)))\n"
   :old "#(g %)"
   :new "g"
-  :expect {:exit 2 :output "No matching"}
-  :interim {:exit 4}}
+  :expect {:exit 2 :output "No matching"}}
 
  {:id :literal-fn-as-old-not-near
   :group :basic
