@@ -98,6 +98,24 @@ bb bench                                   # scaling checks only
 bb bench --baseline /path/to/old/clj-replace.bb
 ```
 
+`test/mutate.bb` measures how strong the cases are. It makes one mutant of the
+script per mutation point (swapped operators such as `=`/`not=` and
+`when`/`when-not`, integers + 1, strings emptied), runs the cases against each
+(stopping at the first failure), and lists the mutants that survive:
+
+```bash
+bb mutate                  # about a minute on 8 cores
+bb mutate --limit 20       # a quick sample
+```
+
+A survivor is either a gap in the cases or an equivalent mutant (same
+behaviour). Survivors a person has judged equivalent are recorded, with the
+reason, in `test/mutate-equivalent.edn`; `bb mutate` lists only new survivors
+as needing attention and exits 1 for them (or for runs that failed for another
+reason, which are not scored). Currently 111 of 123 mutants are killed and the
+12 survivors are recorded as equivalent; two of them only change speed, which
+`bb bench` rejects.
+
 `bb lint` runs clj-kondo and cljfmt on the same files CI checks. CI
 (`.github/workflows/clj-replace.yml`) runs `bb lint` and `bb test` on every
 pull request and push to main, and `bb bench` against the base branch's

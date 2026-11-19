@@ -55,10 +55,14 @@
 ;; ---------------------------------------------------------------- near match
 ;; Values compared with n/sexpr and =, only to choose the exit 4 message.
 ;; #() reads to fresh gensyms (p1__123#) on every call, so they are renamed
-;; in order of appearance before comparing.
+;; in order of appearance before comparing. They become Placeholder
+;; records, which n/sexpr never returns, so no hand-written (fn* [x] ...)
+;; can collide with a renamed #().
 
 (defn- gensym-symbol? [x]
   (and (symbol? x) (re-matches #"(p\d+|rest)__\d+#" (name x))))
+
+(defrecord Placeholder [n])
 
 (defn stable-gensyms [form]
   (let [names (volatile! {})]
@@ -66,7 +70,7 @@
      (fn [x]
        (if (gensym-symbol? x)
          (or (get @names x)
-             (let [s (symbol (str "%" (count @names)))]
+             (let [s (->Placeholder (count @names))]
                (vswap! names assoc x s)
                s))
          x))

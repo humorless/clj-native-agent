@@ -3,6 +3,9 @@
 ;;
 ;; Usage: bb skills/clj-replace/test/run.bb [case-id ...]
 ;;
+;; Set CLJ_REPLACE_FAIL_FAST to a non-blank value to stop at the first FAIL
+;; or XPASS (used by mutation testing, where one failure is enough).
+;;
 ;; Set CLJ_REPLACE_SCRIPT to test another implementation of the script
 ;; against the same cases (default: ../scripts/clj-replace.bb).
 ;;
@@ -98,8 +101,11 @@
 (let [only (set (map keyword *command-line-args*))
       selected (cond->> cases (seq only) (filter (comp only :id)))
       tmp (fs/create-temp-dir {:prefix "clj-replace-test"})
-      results (doall
-               (for [c selected]
+      fail-fast? (not (str/blank? (System/getenv "CLJ_REPLACE_FAIL_FAST")))
+      ;; Also clean up when killed (mutation testing times out hung runs).
+      _ (.addShutdownHook (Runtime/getRuntime) (Thread. #(fs/delete-tree tmp)))
+      results (reduce
+               (fn [acc c]
                  (let [actual (run-case tmp c)
                        [o problems] (evaluate c actual)]
                    (println (format "%-6s %-14s %s" (str/upper-case (name o)) (name (:group c)) (name (:id c))))
@@ -110,7 +116,11 @@
                        (doseq [pr problems] (println "       " pr)))
                      (when (and (= o :fail) (not (str/blank? (:output actual))))
                        (println "        output:" (str/trim (:output actual)))))
-                   o)))
+                   (if (and fail-fast? (#{:fail :xpass} o))
+                     (reduced (conj acc o))
+                     (conj acc o))))
+               []
+               selected)
       freq (frequencies results)
       undocumented (undocumented-exit-codes)]
   (fs/delete-tree tmp)
