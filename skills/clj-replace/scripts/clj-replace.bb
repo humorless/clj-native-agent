@@ -3,9 +3,7 @@
 (require '[babashka.deps :as deps])
 (deps/add-deps '{:deps {rewrite-clj/rewrite-clj {:mvn/version "1.1.47"}}})
 
-(require '[rewrite-clj.zip :as z]
-         '[rewrite-clj.node :as node]
-         '[clojure.string :as str])
+(require '[rewrite-clj.zip :as z])
 
 (defn parse-safely [code-str label]
   (try
@@ -26,8 +24,9 @@
     (catch Exception _
       {:line "?" :column "?"})))
 
-(defn walk-and-find [z target-sexpr]
+(defn walk-and-find
   "Walk the zipper and collect all nodes matching target-sexpr"
+  [z target-sexpr]
   (loop [z z
          matches []]
     (if (z/end? z)
