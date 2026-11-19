@@ -686,6 +686,197 @@
   :new " , "
   :expect {:exit 0 :file "\n(b)\n"}}
 
+ ;; ------------------------------------- every rewrite-clj inner node tag
+ ;; Each kind of node must match itself when only layout differs. Added
+ ;; after code review found that the delimiter check crashed on
+ ;; namespaced maps, which no case covered.
+
+ {:id :layout-list
+  :group :basic
+  :desc "only layout differs: (a b) matches"
+  :file "(def x (a b))\n"
+  :old "(a   b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-vector
+  :group :basic
+  :desc "only layout differs: [ a b ] matches"
+  :file "(def x [a b])\n"
+  :old "[ a  b ]"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-map
+  :group :basic
+  :desc "only layout differs: { :a 1 } matches"
+  :file "(def x {:a 1})\n"
+  :old "{ :a   1 }"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-set
+  :group :basic
+  :desc "only layout differs: #{a b} matches"
+  :file "(def x #{a b})\n"
+  :old "#{a   b}"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-fn
+  :group :basic
+  :desc "only layout differs: #(f %) matches"
+  :file "(def x #(f %))\n"
+  :old "#(f   %)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-meta
+  :group :basic
+  :desc "only layout differs: ^:x y matches"
+  :file "(def ^:x y 1)\n"
+  :old "^:x   y"
+  :new "z"
+  :expect {:exit 0 :file "(def z 1)\n"}}
+
+ {:id :layout-meta-legacy
+  :group :basic
+  :desc "only layout differs: #^:x y matches"
+  :file "(def #^:x y 1)\n"
+  :old "#^:x   y"
+  :new "z"
+  :expect {:exit 0 :file "(def z 1)\n"}}
+
+ {:id :layout-uneval
+  :group :basic
+  :desc "only layout differs: #_ 2 matches"
+  :file "(def x [1 #_2])\n"
+  :old "#_   2"
+  :new "3"
+  :expect {:exit 0 :file "(def x [1 3])\n"}}
+
+ {:id :layout-quote
+  :group :basic
+  :desc "only layout differs: '(a b) matches"
+  :file "(def x '(a b))\n"
+  :old "'(a   b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-syntax-quote
+  :group :basic
+  :desc "only layout differs: `(a b) matches"
+  :file "(def x `(a b))\n"
+  :old "`(a   b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-unquote
+  :group :basic
+  :desc "only layout differs: ~(g a) matches"
+  :file "(def x `(f ~(g a)))\n"
+  :old "~(g   a)"
+  :new "~b"
+  :expect {:exit 0 :file "(def x `(f ~b))\n"}}
+
+ {:id :layout-unquote-splicing
+  :group :basic
+  :desc "only layout differs: ~@(g a) matches"
+  :file "(def x `(f ~@(g a)))\n"
+  :old "~@(g   a)"
+  :new "~@b"
+  :expect {:exit 0 :file "(def x `(f ~@b))\n"}}
+
+ {:id :layout-deref
+  :group :basic
+  :desc "only layout differs: @(f a) matches"
+  :file "(def x @(f a))\n"
+  :old "@(f   a)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-var
+  :group :basic
+  :desc "only layout differs: (def y #'b) matches"
+  :file "(def x #'a)\n(def y #'b)\n"
+  :old "(def y   #'b)"
+  :new "nil"
+  :expect {:exit 0 :file "(def x #'a)\nnil\n"}}
+
+ {:id :layout-eval
+  :group :basic
+  :desc "only layout differs: #=(+ 1 2) matches"
+  :file "(def x #=(+ 1 2))\n"
+  :old "#=(+   1 2)"
+  :new "3"
+  :expect {:exit 0 :file "(def x 3)\n"}}
+
+ {:id :layout-reader-cond
+  :group :basic
+  :desc "only layout differs: #?(:clj 1 :cljs 2) matches"
+  :file "(def x #?(:clj 1 :cljs 2))\n"
+  :old "#?(:clj   1 :cljs 2)"
+  :new "1"
+  :expect {:exit 0 :file "(def x 1)\n"}}
+
+ {:id :layout-tagged-literal
+  :group :basic
+  :desc "only layout differs: #inst \"2020-01-01\" matches"
+  :file "(def x #inst \"2020-01-01\")\n"
+  :old "#inst   \"2020-01-01\""
+  :new "nil"
+  :expect {:exit 0 :file "(def x nil)\n"}}
+
+ {:id :layout-namespaced-map
+  :group :basic
+  :known-bug true
+  :desc "only layout differs: #:a{:b 1} matches"
+  :file "(def x #:a{:b 1})\n"
+  :old "#:a{:b   1}"
+  :new "{}"
+  :expect {:exit 0 :file "(def x {})\n"}
+  :interim {:exit 1 :output "IllegalArgumentException"}}
+
+ {:id :layout-namespaced-map-nested
+  :group :basic
+  :known-bug true
+  :desc "only layout differs: (f #:a{:b 1}) matches"
+  :file "(f #:a{:b 1})\n"
+  :old "(f   #:a{:b  1})"
+  :new "(g)"
+  :expect {:exit 0 :file "(g)\n"}
+  :interim {:exit 1 :output "IllegalArgumentException"}}
+
+ {:id :layout-auto-namespaced-map
+  :group :basic
+  :known-bug true
+  :desc "only layout differs: #::{:b 1} matches"
+  :file "(ns n)\n(def x #::{:b 1})\n"
+  :old "#::{:b   1}"
+  :new "{}"
+  :expect {:exit 0 :file "(ns n)\n(def x {})\n"}
+  :interim {:exit 1 :output "IllegalArgumentException"}}
+
+ {:id :layout-alias-namespaced-map
+  :group :basic
+  :known-bug true
+  :desc "only layout differs: #::s{:b 1} matches"
+  :file "(ns n (:require [x.y :as s]))\n(def x #::s{:b 1})\n"
+  :old "#::s{:b   1}"
+  :new "{}"
+  :expect {:exit 0 :file "(ns n (:require [x.y :as s]))\n(def x {})\n"}
+  :interim {:exit 1 :output "IllegalArgumentException"}}
+
+ {:id :namespaced-map-qualifier-differs
+  :group :basic
+  :known-bug true
+  :desc "#:c{:b 1} is no match for #:a{:b 1}"
+  :file "(def x #:a{:b 1})\n"
+  :old "#:c{:b 1}"
+  :new "{}"
+  :expect {:exit 2}
+  :interim {:exit 1 :output "IllegalArgumentException"}}
+
  ;; ------------------------------------------ crash: unguarded old sexpr
 
  {:id :discard-as-old-keyword

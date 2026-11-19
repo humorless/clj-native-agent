@@ -13,6 +13,14 @@
 ;; exactly that node (exit 0, file equal to replacing it with rewrite-clj) or
 ;; report it among the ambiguous candidates (exit 3). Anything else is a
 ;; failure. CLJ_REPLACE_SCRIPT selects the script under test.
+;;
+;; --per-tag N  sample up to N nodes of every rewrite-clj tag instead of
+;;              --sample nodes overall, so rare node kinds are covered.
+;; --mutate     check the other direction: rename one symbol inside each
+;;              sampled node (nodes without a symbol are skipped); the
+;;              relayouted result must then not match: exit 2, or exit 4
+;;              when the symbol was in metadata (same value) - and the
+;;              file must stay unchanged.
 
 (require '[babashka.fs :as fs]
          '[babashka.process :as proc]
@@ -27,6 +35,8 @@
   (loop [[a b & more :as args] args opts {:sample 200 :seed 1 :max-chars 1500 :paths []}]
     (cond
       (empty? args) opts
+      (= a "--per-tag") (recur more (assoc opts :per-tag (parse-long b)))
+      (= a "--mutate") (recur (rest args) (assoc opts :mutate true))
       (= a "--sample") (recur more (assoc opts :sample (parse-long b)))
       (= a "--seed") (recur more (assoc opts :seed (parse-long b)))
       (= a "--max-chars") (recur more (assoc opts :max-chars (parse-long b)))
@@ -62,15 +72,49 @@
                    acc)))))
     (catch Exception _ [])))
 
+(defn- renamable? [nd]
+  (and (= :token (n/tag nd))
+       (re-matches #"[a-zA-Z*+!?<>=_-][a-zA-Z0-9*+!?<>=_./-]*" (n/string nd))
+       (not (#{"nil" "true" "false"} (n/string nd)))))
+
+(defn mutate
+  "nd with its first renamable symbol renamed, or nil when it has none."
+  [nd]
+  (cond
+    (renamable? nd) (n/token-node (symbol (str (n/string nd) "-zz-mutated")))
+    (n/inner? nd) (let [kids (vec (n/children nd))]
+                    (some (fn [i]
+                            (when-let [m (mutate (kids i))]
+                              (n/replace-children nd (assoc kids i m))))
+                          (range (count kids))))
+    :else nil))
+
 (def sentinel "(CLJ-REPLACE-CORPUS-SENTINEL)")
+
+(defn run-script [target old]
+  (proc/shell {:continue true :out :string :err :string} "bb" script target old sentinel))
+
+(defn target-path [tmp file]
+  (str (fs/path tmp (str "t." (or (fs/extension file) "clj")))))
+
+(defn check-mutated [tmp {:keys [file pos z]}]
+  (when-let [m (mutate (z/node z))]
+    (let [old (n/string (relayout m))
+          target (target-path tmp file)
+          _ (fs/copy file target {:replace-existing true})
+          {:keys [exit out err]} (run-script target old)
+          [line col] pos]
+      (when-not (and (#{2 4} exit) (= (slurp file) (slurp target)))
+        {:file file :line line :col col :exit exit :mutated true
+         :old (subs old 0 (min 200 (count old)))
+         :output (subs (str out err) 0 (min 600 (count (str out err))))}))))
 
 (defn check [tmp {:keys [file pos z]}]
   (let [old (n/string (relayout (z/node z)))
-        target (str (fs/path tmp (str "t" (fs/extension file) "." (or (fs/extension file) "clj"))))
+        target (target-path tmp file)
         _ (fs/copy file target {:replace-existing true})
         want (z/root-string (z/replace z (n/token-node nil sentinel)))
-        {:keys [exit out err]} (proc/shell {:continue true :out :string :err :string}
-                                           "bb" script target old sentinel)
+        {:keys [exit out err]} (run-script target old)
         got (slurp target)
         [line col] pos
         ok (case exit
@@ -83,15 +127,21 @@
        :output (subs (str out err) 0 (min 600 (count (str out err))))
        :file-matches? (= want got)})))
 
-(let [{:keys [sample seed max-chars paths]} (parse-args *command-line-args*)
+(defn pick [rnd n xs]
+  (if (<= (count xs) n)
+    xs
+    (repeatedly n #(nth xs (.nextInt rnd (count xs))))))
+
+(let [{:keys [sample seed max-chars paths per-tag mutate]} (parse-args *command-line-args*)
       files (clojure-files paths)
       all (vec (mapcat #(nodes-of % max-chars) files))
       rnd (java.util.Random. seed)
-      picked (if (<= (count all) sample)
-               all
-               (repeatedly sample #(nth all (.nextInt rnd (count all)))))
+      picked (if per-tag
+               (mapcat (fn [[_ xs]] (pick rnd per-tag (vec xs)))
+                       (sort-by (comp str key) (group-by #(n/tag (z/node (:z %))) all)))
+               (pick rnd sample all))
       tmp (fs/create-temp-dir {:prefix "clj-replace-corpus"})
-      failures (doall (keep #(check tmp %) picked))
+      failures (doall (keep #(if mutate (check-mutated tmp %) (check tmp %)) picked))
       by-exit (frequencies (map :exit failures))]
   (fs/delete-tree tmp)
   (doseq [f failures] (prn f))
