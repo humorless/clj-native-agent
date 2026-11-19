@@ -2,7 +2,7 @@
 ;;
 ;; Keys:
 ;;   :id          unique keyword, also the temp file name
-;;   :group       :basic | :false-negative | :false-positive
+;;   :group       :basic | :false-negative | :false-positive | :crash
 ;;   :desc        one line: what the case checks
 ;;   :file        file content before the run
 ;;   :old :new    the two arguments passed to clj-replace.bb
@@ -14,6 +14,7 @@
 ;;                script does not do it yet (expected failure)
 ;;   :interim     same shape as :expect: what a known-bug case does today
 ;;   :issue       GitHub issue number, when there is one
+;;   :source      where a mined case came from (eastwood, splint)
 ;;   :missing-file? true to run without creating the file
 
 [;; ---------------------------------------------------------------- basic
@@ -178,6 +179,145 @@
   :new "(foo 2)"
   :expect {:exit 2 :output "No matching"}}
 
+ ;; -------------------------------------- basic: reader syntax from corpora
+ ;; Mined from eastwood (github.com/jonase/eastwood) and splint
+ ;; (github.com/NoahTheDuke/splint); :source names where the shape came from.
+
+ {:id :char-literals
+  :group :basic
+  :source "splint test strings, eastwood cases"
+  :desc "named, unicode and plain character literals match themselves"
+  :file "(def cs [\\newline \\space \\u00e9 \\a])\n"
+  :old "[\\newline \\space \\u00e9 \\a]"
+  :new "[]"
+  :expect {:exit 0 :file "(def cs [])\n"}}
+
+ {:id :char-vs-string
+  :group :basic
+  :desc "a character literal does not match a one-char string"
+  :file "(def c \\a)\n"
+  :old "(def c \"a\")"
+  :new "(def c nil)"
+  :expect {:exit 2}}
+
+ {:id :ratio
+  :group :basic
+  :desc "ratio literals match themselves"
+  :file "(def r 1/2)\n"
+  :old "(def r 1/2)"
+  :new "(def r 0)"
+  :expect {:exit 0 :file "(def r 0)\n"}}
+
+ {:id :bigdec-vs-double
+  :group :basic
+  :desc "1.5M does not match 1.5"
+  :file "(def d 1.5M)\n"
+  :old "(def d 1.5)"
+  :new "(def d 0)"
+  :expect {:exit 2}}
+
+ {:id :inf
+  :group :basic
+  :desc "##Inf matches itself (unlike ##NaN, Inf is = to itself)"
+  :file "(def i ##Inf)\n"
+  :old "(def i ##Inf)"
+  :new "(def i 0)"
+  :expect {:exit 0 :file "(def i 0)\n"}}
+
+ {:id :string-escape
+  :group :basic
+  :desc "strings with escape sequences match themselves"
+  :file "(def s \"a\\nb\")\n"
+  :old "(def s \"a\\nb\")"
+  :new "(def s \"\")"
+  :expect {:exit 0 :file "(def s \"\")\n"}}
+
+ {:id :method-value
+  :group :basic
+  :source "splint dev/noahtheduke/splint/dev.clj"
+  :desc "Clojure 1.12 qualified method values (String/.length) match themselves"
+  :file "(map String/.length xs)\n"
+  :old "(map String/.length xs)"
+  :new "(map count xs)"
+  :expect {:exit 0 :file "(map count xs)\n"}}
+
+ {:id :tagged-uuid
+  :group :basic
+  :desc "#uuid tagged literals match themselves"
+  :file "(def u #uuid \"00000000-0000-0000-0000-000000000000\")\n"
+  :old "(def u #uuid \"00000000-0000-0000-0000-000000000000\")"
+  :new "(def u nil)"
+  :expect {:exit 0 :file "(def u nil)\n"}}
+
+ {:id :reader-cond-splice
+  :group :basic
+  :source "splint src/noahtheduke/splint/clojure_ext/core.cljc"
+  :desc "a form containing #?@ matches itself"
+  :file "(def v [#?@(:clj [1 2] :cljs [3])])\n"
+  :old "(def v [#?@(:clj [1 2] :cljs [3])])"
+  :new "(def v [])"
+  :expect {:exit 0 :file "(def v [])\n"}}
+
+ {:id :reader-cond-splice-target
+  :group :basic
+  :source "splint src/noahtheduke/splint/clojure_ext/core.cljc"
+  :desc "a #?@ node inside ns :require can be the target"
+  :file "(ns a (:require #?@(:clj [[b.c :as c]])))\n"
+  :old "#?@(:clj [[b.c :as c]])"
+  :new "#?@(:clj [[b.d :as c]])"
+  :expect {:exit 0 :file "(ns a (:require #?@(:clj [[b.d :as c]])))\n"}}
+
+ {:id :deref-self
+  :group :basic
+  :source "splint corpus/special_characters.clj"
+  :desc "@a matches itself"
+  :file "(def v @a)\n(def w @(a))\n"
+  :old "(def w @(a))"
+  :new "(def w nil)"
+  :expect {:exit 0 :file "(def v @a)\n(def w nil)\n"}}
+
+ {:id :syntax-quote-unquote-self
+  :group :basic
+  :source "splint corpus/special_characters.clj"
+  :desc "syntax-quote with ~ and ~@ matches itself"
+  :file "(defmacro m [a b] `(f ~a ~@b))\n"
+  :old "`(f ~a ~@b)"
+  :new "`(g ~a ~@b)"
+  :expect {:exit 0 :file "(defmacro m [a b] `(g ~a ~@b))\n"}}
+
+ {:id :eval-reader-self
+  :group :basic
+  :source "splint corpus/special_characters.clj"
+  :desc "#=(...) matches itself"
+  :file "(def x #=(+ 1 2))\n"
+  :old "(def x #=(+ 1 2))"
+  :new "(def x 3)"
+  :expect {:exit 0 :file "(def x 3)\n"}}
+
+ {:id :auto-keyword-vs-qualified
+  :group :basic
+  :desc "::id does not match :foo/id (no namespace resolution)"
+  :file "(ns foo)\n(def k ::id)\n"
+  :old "(def k :foo/id)"
+  :new "(def k nil)"
+  :expect {:exit 2}}
+
+ {:id :comma-is-whitespace
+  :group :basic
+  :desc "commas are whitespace, so {:a 1, :b 2} matches {:a 1 :b 2}"
+  :file "(def m {:a 1, :b 2})\n"
+  :old "(def m {:a 1 :b 2})"
+  :new "(def m {})"
+  :expect {:exit 0 :file "(def m {})\n"}}
+
+ {:id :discard-inside-old
+  :group :basic
+  :desc "an old string containing #_ matches the same text"
+  :file "(do #_(foo 1) (bar))\n"
+  :old "(do #_(foo 1) (bar))"
+  :new "(do (bar))"
+  :expect {:exit 0 :file "(do (bar))\n"}}
+
  ;; ------------------------------------------- false negative: should match
 
  {:id :anon-fn
@@ -293,4 +433,74 @@
   :old "(def a 1)"
   :new "(def a 2)"
   :expect {:exit 2}
-  :interim {:exit 0 :file "(def a 2)\n"}}]
+  :interim {:exit 0 :file "(def a 2)\n"}}
+
+ ;; --------------------------- false positive: mined from eastwood / splint
+
+ {:id :quote-vs-syntax-quote
+  :group :false-positive
+  :known-bug true
+  :source "eastwood src/eastwood/linters/implicit_dependencies.clj:32"
+  :desc "'require must not match `require (syntax-quote resolves the symbol)"
+  :file "(def r `require)\n"
+  :old "(def r 'require)"
+  :new "(def r nil)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def r nil)\n"}}
+
+ {:id :empty-list-vs-vector
+  :group :false-positive
+  :known-bug true
+  :source "eastwood cases/testcases/constanttestexpr.clj:17"
+  :desc "() must not match []"
+  :file "(def e [])\n"
+  :old "(def e ())"
+  :new "(def e nil)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def e nil)\n"}}
+
+ {:id :type-hint-arg
+  :group :false-positive
+  :known-bug true
+  :source "eastwood src/eastwood/lint.clj:322"
+  :desc "[f] must not match [^File f]: replacing drops the type hint"
+  :file "(defn f [^File f] f)\n"
+  :old "(defn f [f] f)"
+  :new "(defn f [g] g)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(defn f [g] g)\n"}}
+
+ {:id :type-hint-deref
+  :group :false-positive
+  :known-bug true
+  :source "eastwood copied-deps/.../clojure/core/memoize.clj:128"
+  :desc "@cache must not match ^Foo @cache"
+  :file "(def c ^Foo @cache)\n"
+  :old "(def c @cache)"
+  :new "(def c nil)"
+  :expect {:exit 2}
+  :interim {:exit 0 :file "(def c nil)\n"}}
+
+ ;; ------------------------------------------ crash: unguarded old sexpr
+
+ {:id :discard-as-old-keyword
+  :group :crash
+  :known-bug true
+  :source "eastwood copied-deps/.../clojure/tools/analyzer.clj:825, splint corpus/arglists.clj:47"
+  :desc "an old string that is a #_ form is replaced, not a stack trace"
+  :file "(cond a 1\n  #_:else :default 2)\n"
+  :old "#_:else"
+  :new ":else"
+  :expect {:exit 0 :file "(cond a 1\n  :else :default 2)\n"}
+  :interim {:exit 1 :output "unsupported operation"}}
+
+ {:id :discard-as-old-form
+  :group :crash
+  :known-bug true
+  :source "splint test/.../prefer_clj_string_test.clj:41"
+  :desc "a discarded form can be the target"
+  :file "(do #_(foo 1) (bar))\n"
+  :old "#_(foo 1)"
+  :new "(foo 2)"
+  :expect {:exit 0 :file "(do (foo 2) (bar))\n"}
+  :interim {:exit 1 :output "unsupported operation"}}]
