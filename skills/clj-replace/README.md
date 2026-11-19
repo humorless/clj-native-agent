@@ -88,6 +88,21 @@ git clone --depth 1 https://github.com/jonase/eastwood /tmp/eastwood
 bb corpus --sample 300 /tmp/eastwood
 ```
 
+`test/bench.bb` guards performance. It generates its own fixtures, times
+each scenario (median of several runs) and fails when the script is more than
+1.3x slower than a baseline script, or when time grows faster than the input
+(a 4x larger file, or deeply nested forms):
+
+```bash
+bb bench                                   # scaling checks only
+bb bench --baseline /path/to/old/clj-replace.bb
+```
+
+`bb lint` runs clj-kondo and cljfmt on the same files CI checks. CI
+(`.github/workflows/clj-replace.yml`) runs `bb lint` and `bb test` on every
+pull request and push to main, and `bb bench` against the base branch's
+script on pull requests.
+
 Cases marked `:known-bug true` describe correct behaviour the script does not
 have yet; they count as expected failures (XFAIL). When one starts passing the
 run fails with XPASS, so remove its marker.
