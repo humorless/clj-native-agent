@@ -30,9 +30,9 @@
   qualifier and map); their text lives entirely in the children, which
   are compared anyway, so they have no delimiters of their own."
   [nd]
-  (try
-    (n/string (n/replace-children nd []))
-    (catch Exception _ ::children-only)))
+  (if (= :namespaced-map (n/tag nd))
+    ::children-only
+    (n/string (n/replace-children nd []))))
 
 (defn leaf-text [nd]
   (if (= :comment (n/tag nd))

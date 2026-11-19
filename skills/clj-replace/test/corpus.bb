@@ -36,7 +36,7 @@
     (cond
       (empty? args) opts
       (= a "--per-tag") (recur more (assoc opts :per-tag (parse-long b)))
-      (= a "--mutate") (recur (rest args) (assoc opts :mutate true))
+      (= a "--mutate") (recur (rest args) (assoc opts :mutate? true))
       (= a "--sample") (recur more (assoc opts :sample (parse-long b)))
       (= a "--seed") (recur more (assoc opts :seed (parse-long b)))
       (= a "--max-chars") (recur more (assoc opts :max-chars (parse-long b)))
@@ -132,7 +132,7 @@
     xs
     (repeatedly n #(nth xs (.nextInt rnd (count xs))))))
 
-(let [{:keys [sample seed max-chars paths per-tag mutate]} (parse-args *command-line-args*)
+(let [{:keys [sample seed max-chars paths per-tag mutate?]} (parse-args *command-line-args*)
       files (clojure-files paths)
       all (vec (mapcat #(nodes-of % max-chars) files))
       rnd (java.util.Random. seed)
@@ -141,7 +141,7 @@
                        (sort-by (comp str key) (group-by #(n/tag (z/node (:z %))) all)))
                (pick rnd sample all))
       tmp (fs/create-temp-dir {:prefix "clj-replace-corpus"})
-      failures (doall (keep #(if mutate (check-mutated tmp %) (check tmp %)) picked))
+      failures (doall (keep #(if mutate? (check-mutated tmp %) (check tmp %)) picked))
       by-exit (frequencies (map :exit failures))]
   (fs/delete-tree tmp)
   (doseq [f failures] (prn f))
