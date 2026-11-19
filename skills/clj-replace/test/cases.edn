@@ -609,7 +609,7 @@
   :file "(a)\n(b)\n"
   :old "(a) (c)"
   :new "(x)"
-  :expect {:exit 1}
+  :expect {:exit 1 :output "exactly one form"}
   :interim {:exit 0 :file "(x)\n(b)\n"}}
 
  {:id :multi-form-new
@@ -619,8 +619,116 @@
   :file "(a)\n(b)\n"
   :old "(a)"
   :new "(x) (y)"
-  :expect {:exit 1}
+  :expect {:exit 1 :output "exactly one form"}
   :interim {:exit 0 :file "(x)\n(b)\n"}}
+
+ {:id :blank-old
+  :group :input
+  :known-bug true
+  :desc "an old string with no form is rejected"
+  :file "(a)\n"
+  :old "   "
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}
+  :interim {:exit 2}}
+
+ {:id :comment-only-old
+  :group :input
+  :known-bug true
+  :desc "an old string holding only a comment is rejected"
+  :file "(a)\n"
+  :old "; just a comment"
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}
+  :interim {:exit 2}}
+
+ {:id :form-plus-comment-old
+  :group :input
+  :known-bug true
+  :desc "an old string with a form and a top-level comment is rejected (the comment would stay in the file)"
+  :file "(a) ; why\n(b)\n"
+  :old "(a) ; why"
+  :new "(x)"
+  :expect {:exit 1 :output "exactly one form"}
+  :interim {:exit 0 :file "(x) ; why\n(b)\n"}}
+
+ {:id :blank-new-deletes
+  :group :basic
+  :desc "a blank new string deletes the matched form"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new ""
+  :expect {:exit 0 :file "\n(b)\n"}}
+
+ {:id :comment-only-new
+  :group :input
+  :known-bug true
+  :desc "a new string holding only a comment is rejected"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new "; gone"
+  :expect {:exit 1 :output "exactly one form"}
+  :interim {:exit 0 :file "; gone\n(b)\n"}}
+
+ {:id :form-plus-comment-new
+  :group :input
+  :known-bug true
+  :desc "a new string with a form and a top-level comment is rejected, not cut to the form"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new "(x) ; why"
+  :expect {:exit 1 :output "exactly one form"}
+  :interim {:exit 0 :file "(x)\n(b)\n"}}
+
+ ;; ------------------------------------------------ comments are content
+ ;; Comments must be equal and in the same place; only trailing
+ ;; whitespace at the end of a comment line is ignored.
+
+ {:id :comment-same
+  :group :basic
+  :desc "the same inner comment with different indentation matches"
+  :file "(or a ; note\n    b)\n"
+  :old "(or a ; note\n b)"
+  :new "(and a b)"
+  :expect {:exit 0 :file "(and a b)\n"}}
+
+ {:id :comment-trailing-whitespace
+  :group :basic
+  :desc "trailing whitespace at the end of a comment line is ignored"
+  :file "(or a ; note   \n    b)\n"
+  :old "(or a ; note\n b)"
+  :new "(and a b)"
+  :expect {:exit 0 :file "(and a b)\n"}}
+
+ {:id :comment-text-differs
+  :group :false-positive
+  :known-bug true
+  :desc "a different comment text is a near match"
+  :file "(or a ; note\n    b)\n"
+  :old "(or a ; other\n b)"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or a ; note\n    b\\)"}
+  :interim {:exit 0 :file "(and a b)\n"}}
+
+ {:id :comment-inner-space
+  :group :false-positive
+  :known-bug true
+  :desc "an extra space inside a comment is a near match"
+  :file "(or a ; a  b\n    b)\n"
+  :old "(or a ; a b\n b)"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or a ; a  b\n    b\\)"}
+  :interim {:exit 0 :file "(and a b)\n"}}
+
+ {:id :comment-moved
+  :group :false-positive
+  :known-bug true
+  :desc "the same comment in another place is a near match"
+  :file "(or a ; note\n    b)\n"
+  :old "(or a b ; note\n)"
+  :new "(and a b)"
+  :expect {:exit 4 :output "line 1, column 1\\b[\\s\\S]*?\\(or a ; note\n    b\\)"}
+  :interim {:exit 0 :file "(and a b)\n"}}
 
  ;; ------------------------------------------ crash: unguarded old sexpr
 
