@@ -2,7 +2,7 @@
 ;;
 ;; Keys:
 ;;   :id          unique keyword, also the temp file name
-;;   :group       :basic | :false-negative | :false-positive | :crash
+;;   :group       :basic | :false-negative | :false-positive | :crash | :input
 ;;   :desc        one line: what the case checks
 ;;   :file        file content before the run
 ;;   :old :new    the two arguments passed to clj-replace.bb
@@ -587,6 +587,28 @@
   :new "(and a b)"
   :expect {:exit 2}
   :interim {:exit 0 :file "(and a b)\n"}}
+
+ ;; -------------------------------- input: old/new with several forms
+
+ {:id :multi-form-old
+  :group :input
+  :known-bug true
+  :desc "an old string with two forms is rejected, not matched by its first form alone"
+  :file "(a)\n(b)\n"
+  :old "(a) (c)"
+  :new "(x)"
+  :expect {:exit 1}
+  :interim {:exit 0 :file "(x)\n(b)\n"}}
+
+ {:id :multi-form-new
+  :group :input
+  :known-bug true
+  :desc "a new string with two forms is rejected, not cut to its first form"
+  :file "(a)\n(b)\n"
+  :old "(a)"
+  :new "(x) (y)"
+  :expect {:exit 1}
+  :interim {:exit 0 :file "(x)\n(b)\n"}}
 
  ;; ------------------------------------------ crash: unguarded old sexpr
 
