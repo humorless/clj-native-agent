@@ -206,7 +206,7 @@ bb /path/to/clj-replace/scripts/clj-replace.bb code.clj "data" "record"
 
 ### Why This Matters
 
-The key insight: clj-replace **doesn't care about formatting**. It understands that the code structure is the same, even if whitespace changed.
+The key insight: clj-replace **ignores layout only**. Whitespace, indentation, line breaks and commas may differ; everything else must be written the same way.
 
 ---
 
@@ -314,7 +314,7 @@ bb clj-replace.bb file.clj "[x ...]" "[y ...]"
 
 If all tests pass:
 
-✅ **Code structure matching works** — S-expression comparison is reliable
+✅ **Form matching works** — forms are compared ignoring layout only
 
 ✅ **Format-agnostic replacement works** — Whitespace variations are handled
 
@@ -339,7 +339,7 @@ If all tests pass:
 If tests fail:
 1. Check that Babashka is installed (`bb --version`)
 2. Ensure Clojure code in test files is valid
-3. Review the error message (exit code 1, 2, or 3)
+3. Review the error message and exit code (see the table in [`../SKILL.md`](../SKILL.md#exit-codes))
 4. Try a simpler test case first
 5. Check [`../SKILL.md`](../SKILL.md) for troubleshooting
 

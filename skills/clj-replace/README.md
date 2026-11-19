@@ -2,7 +2,7 @@
 
 **Structural Clojure code replacement that ignores formatting differences.**
 
-When `str_replace` fails because whitespace changed (e.g., after running `cljfmt`), clj-replace succeeds by comparing code **structure** instead of text.
+When `str_replace` fails because whitespace changed (e.g., after running `cljfmt`), clj-replace succeeds by comparing forms while ignoring **layout only** (whitespace, indentation, line breaks, commas).
 
 ## What's the Problem?
 
@@ -35,8 +35,9 @@ See [`docs/QUICK-START.md`](docs/QUICK-START.md) for detailed examples.
 
 ## How It Works
 
-- **Parses** both old-string and file into S-expression trees
-- **Compares** structure, not text (ignores whitespace/indentation/newlines)
+- **Parses** old-string, new-string and the file with rewrite-clj
+- **Compares** forms ignoring layout only; tokens, strings, reader syntax, metadata, `#_` forms, map order and comments must be written the same way
+- **Shows** the file's exact text when a form has the same value but is written differently (exit 4), so you can retry with it
 - **Replaces** matching nodes while preserving original formatting
 - **Reports** exact location (line + column)
 
@@ -55,12 +56,14 @@ bb clj-replace.bb <filename> <old-string> <new-string>
 - `old-string` — Code to find (as a string)
 - `new-string` — Code to replace with (as a string)
 
-**Exit codes:**
-- `0` — Success
-- `1` — Parse error (invalid Clojure or file not found)
-- `2` — No match found
-- `3` — Multiple matches found (ambiguous)
-- `4` — old-string is in the file but cannot be matched structurally (e.g. `#()`, `##NaN`); use a plain text edit
+**Exit codes** (the file is modified only on `0`):
+- `0` — Replaced exactly one form (a blank new-string deletes it)
+- `1` — Invalid input: missing arguments, file not found, parse error, or old/new-string is not exactly one form
+- `2` — No match
+- `3` — Several forms match (ambiguous)
+- `4` — Near match: same value written differently; the file's text is printed so you can retry with it
+
+See the exit code table in [`SKILL.md`](SKILL.md#exit-codes) for what to do after each one.
 
 See [`SKILL.md`](SKILL.md) for full documentation.
 
