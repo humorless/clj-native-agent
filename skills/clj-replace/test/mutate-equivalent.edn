@@ -1,7 +1,9 @@
 ;; Surviving mutants of clj-replace.bb judged equivalent (same behaviour as
 ;; the original), read by test/mutate.bb. Matched by trimmed source line and
-;; operator, so line numbers can move. Two are slower but behave the same;
-;; bb bench rejects those. Remove an entry when bb mutate reports it stale.
+;; operator, so line numbers can move; an identical line added elsewhere
+;; would match too, so review new copies of these lines. Two are slower but
+;; behave the same; bb bench rejects those. Remove an entry when bb mutate
+;; reports it stale.
 [{:source-line "(reduce (fn [k c] (if (layout? c) k (inc k))) 0 (n/children nd)))"
   :from "inc"
   :to "dec"
@@ -12,20 +14,10 @@
   :to "1"
   :reason "significant-count is only compared between the two nodes; a shared offset does not change equality"}
 
- {:source-line "(def ^:private placeholder-prefix (str (char 0) \"arg\"))"
-  :from "0"
-  :to "1"
-  :reason "the placeholder prefix only has to be a symbol name no source text produces; (char 1) qualifies as well as (char 0)"}
-
- {:source-line "(def ^:private placeholder-prefix (str (char 0) \"arg\"))"
-  :from "\"arg\""
-  :to "\"\""
-  :reason "the NUL character alone already makes placeholders unreadable; the \"arg\" suffix is for readability"}
-
  {:source-line "{:ok true :value (if stable? (stable-gensyms v) v)})"
   :from "if"
   :to "if-not"
-  :reason "renames gensyms on every node even when old-string has no #(); placeholders cannot collide with source symbols, so results are the same, only slower: bb bench fails it (deep-no-match about 1.9x)"}
+  :reason "renames gensyms on every node even when old-string has no #(); placeholders are records no source can produce, so results are the same, only slower: bb bench fails it (deep-no-match about 1.9x)"}
 
  {:source-line "(when-not (and (= 1 (count nodes)) (not= :comment (n/tag (first nodes))))"
   :from "first"

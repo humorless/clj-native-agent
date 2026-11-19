@@ -56,11 +56,14 @@
          opts {:jobs (.availableProcessors (Runtime/getRuntime)) :seed 1}]
     (cond
       (empty? args) opts
-      (#{"--jobs" "--limit" "--seed"} a) (if-let [v (some-> b parse-long)]
-                                           (if (pos? v)
-                                             (recur more (assoc opts (keyword (subs a 2)) v))
-                                             (usage-error (str a " needs a positive number")))
-                                           (usage-error (str a " needs a positive number")))
+      (= a "--seed") (if-let [v (some-> b parse-long)]
+                       (recur more (assoc opts :seed v))
+                       (usage-error "--seed needs a number"))
+      (#{"--jobs" "--limit"} a) (if-let [v (some-> b parse-long)]
+                                  (if (pos? v)
+                                    (recur more (assoc opts (keyword (subs a 2)) v))
+                                    (usage-error (str a " needs a positive number")))
+                                  (usage-error (str a " needs a positive number")))
       (= a "--out") (if (and b (not (str/starts-with? b "--")))
                       (recur more (assoc opts :out b))
                       (usage-error "--out needs a path"))
@@ -170,8 +173,9 @@
     {}))
 
 (defn sample [seed n xs]
-  (let [rnd (java.util.Random. seed)]
-    (sort-by :id (take n (sort-by (fn [_] (.nextDouble rnd)) xs)))))
+  (let [shuffled (java.util.ArrayList. ^java.util.Collection xs)]
+    (java.util.Collections/shuffle shuffled (java.util.Random. seed))
+    (sort-by :id (take n shuffled))))
 
 (defn print-survivor [{:keys [line col kind from to source-line]}]
   (println (format "  %4d:%-3d %-6s %s -> %s   | %s" line col (name kind) from to source-line)))

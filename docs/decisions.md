@@ -62,6 +62,14 @@ Reason: First run: 93/124 killed (75.0%). Of the 31 survivors, 18 were gaps: nea
 
 ## 2026-11-20 — Mutation testing: corrected classification and a record of equivalent mutants
 
+Superseded by: 2026-11-20 — Gensym placeholders are records
+
 Before: The previous entry called all 13 survivors equivalent. Code review found inputs where three behave differently: renamed `#()` gensyms were named `%0`, `%1`, ..., which source code can contain, so a hand-written `(fn* [%0] (g %0))` in the file was a near match for `#(g %)` (exit 4) while the reverse direction was exit 2, and the "%" prefix and the two "speed-only" mutants changed that. Also, any non-zero exit of the case runner counted as a kill, and the classification lived only in prose.
 Decision: Gensym placeholders start with a NUL character, which no source text produces, so a hand-written `fn*` is never a near match for `#()` in either direction (two cases pin it). `bb mutate` counts a mutant as killed only when the cases print a FAIL, XPASS or DOC line; other failures are errors, not scored. Equivalent survivors are recorded with their reason in `skills/clj-replace/test/mutate-equivalent.edn`, matched by source line and operator; `bb mutate` reports only new survivors as needing attention, exits 1 for them or for errors, and lists stale entries. `--limit` became a seeded random sample.
 Reason: Now 111 of 125 mutants are killed; the 14 survivors are recorded as equivalent, and checked: the two that rename gensyms on every node give the same exit codes as the original on the reviewer's inputs and fail `bb bench` at 1.9x on the deep no-match scenario. A record next to the tool keeps the hand classification checkable as the script changes, without making mutation testing a CI gate.
+
+## 2026-11-20 — Gensym placeholders are records
+
+Before: Renamed `#()` gensyms were symbols starting with a NUL character. Review showed a source file can contain NUL bytes, so `(f (fn* [<NUL>arg0] (g <NUL>arg0)))` was still a near match for `#(g %)` (exit 4), and the two mutants of the prefix were equivalent only for files without control bytes. `bb mutate --limit` also crashed for some seeds: the shuffle drew a new random key on every comparison, which Java's sort rejects.
+Decision: Placeholders are instances of a `Placeholder` record, which `n/sexpr` never returns, so no source text can forge one (case `nul-symbol-fn-not-near`). The sample uses `java.util.Collections/shuffle` with the seeded `Random`; `--seed` accepts any integer.
+Reason: The collision class is gone rather than made unlikely, and the two prefix mutants no longer exist (bb mutate listed their entries as stale). Now 111 of 123 mutants are killed, the 12 survivors are recorded as equivalent, and the two speed-only ones were re-checked: same exit codes as the original on the review's inputs, and `bb bench` rejects them at about 1.9x on the deep no-match scenario. The seeds that crashed before (37, 71, 130) run.

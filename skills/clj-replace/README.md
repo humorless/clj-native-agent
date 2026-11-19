@@ -112,8 +112,8 @@ A survivor is either a gap in the cases or an equivalent mutant (same
 behaviour). Survivors a person has judged equivalent are recorded, with the
 reason, in `test/mutate-equivalent.edn`; `bb mutate` lists only new survivors
 as needing attention and exits 1 for them (or for runs that failed for another
-reason, which are not scored). Currently 111 of 125 mutants are killed and the
-14 survivors are recorded as equivalent; two of them only change speed, which
+reason, which are not scored). Currently 111 of 123 mutants are killed and the
+12 survivors are recorded as equivalent; two of them only change speed, which
 `bb bench` rejects.
 
 `bb lint` runs clj-kondo and cljfmt on the same files CI checks. CI
