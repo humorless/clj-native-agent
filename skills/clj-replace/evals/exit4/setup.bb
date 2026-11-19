@@ -5,7 +5,8 @@
 ;;
 ;; Creates <run-dir> with target.clj (the scenario's fixture), clj-replace.bb
 ;; (the logging stand-in, comments stripped) and real-clj-replace.bb (script,
-;; default ../../scripts/clj-replace.bb), removes an old <run-dir>.calls.edn,
+;; default ../../scripts/clj-replace.bb), records its SHA-256 in
+;; <run-dir>.script.sha256, removes an old <run-dir>.calls.edn,
 ;; and prints prompt.txt filled in; with "with", prefixed by
 ;; prompt-skill-prefix.txt holding ../../SKILL.md. Give the printed prompt to
 ;; a fresh agent, then grade with: bb grade.bb <scenario-id> <run-dir>
@@ -34,6 +35,9 @@
   (spit (str (fs/path dir "clj-replace.bb")) stand-in)
   (fs/copy script (fs/path dir "real-clj-replace.bb") {:replace-existing true})
   (fs/delete-if-exists (str dir ".calls.edn"))
+  (let [md (java.security.MessageDigest/getInstance "SHA-256")]
+    (spit (str dir ".script.sha256")
+          (apply str (map #(format "%02x" %) (.digest md (fs/read-all-bytes script))))))
   (print (str (when (= "with" condition)
                 (fill (slurp (str (fs/path here "prompt-skill-prefix.txt")))
                       {:skill (slurp (str (fs/path here ".." ".." "SKILL.md")))}))

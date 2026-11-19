@@ -13,7 +13,8 @@
 ;;     exit 4, and a later call got exit 0;
 ;;   - replaying the logged calls on the fixture with the run's
 ;;     real-clj-replace.bb gives exactly the final file (:replay-matches?),
-;;     so the file was changed through clj-replace only.
+;;     so the file was changed through clj-replace only; the script must
+;;     still have the hash setup.bb recorded in <run-dir>.script.sha256.
 ;; :retried-with-file-text? (reported, not required) is true when a later
 ;; call's old-string is the file's text of the form, line by line.
 
@@ -40,6 +41,18 @@
     (if f
       (mapv edn/read-string (remove str/blank? (str/split-lines (slurp f))))
       [])))
+
+(defn sha256 [path]
+  (let [md (java.security.MessageDigest/getInstance "SHA-256")]
+    (apply str (map #(format "%02x" %) (.digest md (fs/read-all-bytes path))))))
+
+(defn script-unchanged?
+  "False when setup.bb recorded the script's hash next to the run directory
+  and real-clj-replace.bb no longer has it (the replay would be meaningless)."
+  [dir]
+  (let [recorded (str (fs/path (fs/parent (fs/absolutize dir)) (str (fs/file-name dir) ".script.sha256")))]
+    (or (not (fs/exists? recorded))
+        (= (str/trim (slurp recorded)) (sha256 (str (fs/path dir "real-clj-replace.bb")))))))
 
 (defn replay
   "The fixture after replaying calls with the run's script."
@@ -69,17 +82,19 @@
                    (for [s (:must-contain-squashed scenario) :when (not (str/includes? (squash final) (squash s)))] [:missing s])
                    (for [s (:must-not-contain scenario) :when (str/includes? (lines final) (lines s))] [:present s])
                    (for [s (:unchanged scenario) :when (not (str/includes? final s))] [:changed s])))
-      first-ok? (and first-call
-                     (= [(:first-old scenario) (:first-new scenario)] (subvec (:args first-call) 1))
-                     (= 4 (:exit first-call)))
+      first-ok? (boolean (and first-call
+                              (= [(:first-old scenario) (:first-new scenario)] (vec (rest (:args first-call))))
+                              (= 4 (:exit first-call))))
       later-ok? (boolean (some #(= 0 (:exit %)) later))
-      replay-ok? (= final (replay scenario dir calls))
-      pass? (and (empty? failed) first-ok? later-ok? replay-ok?)]
+      script-ok? (script-unchanged? dir)
+      replay-ok? (and script-ok? (= final (replay scenario dir calls)))
+      pass? (boolean (and (empty? failed) first-ok? later-ok? replay-ok?))]
   (prn {:scenario (:id scenario)
         :pass? pass?
         :checks failed
         :first-call-as-dictated? (boolean first-ok?)
         :later-exit-0? later-ok?
+        :script-unchanged? script-ok?
         :replay-matches? replay-ok?
         :calls (count calls)
         :exits (mapv :exit calls)
