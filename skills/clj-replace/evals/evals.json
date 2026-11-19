@@ -4,14 +4,38 @@
     {
       "id": 0,
       "prompt": "I wrote a compact single-line Clojure handler and ran `cljfmt fix`. The formatter aggressively expanded the code, shifting indentation and splitting the map literal across multiple lines. Now I need to rename the parameter `req` to `request`, but my str_replace tool can't find a match — the whitespace in the file no longer matches what I wrote. How do I rename the parameter?",
-      "expected_output": "Should recognize that cljfmt changed the textual layout while the S-expression structure remained the same. Should invoke clj-replace via `bb /path/to/clj-replace.bb <file> \"req\" \"request\"` instead of attempting to construct a whitespace-sensitive str_replace match. Should explain why structural replacement is format-agnostic and how clj-replace compares S-expressions ignoring whitespace.",
+      "expected_output": "Should recognize that cljfmt changed the textual layout while the S-expression structure remained the same. Should invoke clj-replace via `bb /path/to/clj-replace.bb <file> \"req\" \"request\"` instead of attempting to construct a whitespace-sensitive str_replace match. Should explain that clj-replace compares forms ignoring layout only (whitespace, indentation, line breaks, commas), so the cljfmt changes do not matter.",
       "files": []
     },
     {
       "id": 1,
       "prompt": "I ran cljfmt on my Clojure project and now my editor's find-and-replace can't locate the old function form because the indentation changed. I need to rename the local binding `data` to `parsed-data` inside a let block. The code was originally on one line but is now spread over several lines with deep indentation.",
-      "expected_output": "Should use clj-replace with \"data\" → \"parsed-data\" as old/new strings, bypassing the need to match exact whitespace. Should explain that clj-replace compares S-expressions via `sexpr` equality so indentation and line breaks are irrelevant. If there are multiple occurrences (the binding plus references in the body), should explain ambiguity detection (exit code 3) and how to narrow the old-string to be more specific.",
+      "expected_output": "Should use clj-replace with \"data\" → \"parsed-data\" as old/new strings, bypassing the need to match exact whitespace. Should explain that clj-replace compares forms ignoring layout only, so indentation and line breaks are irrelevant. If there are multiple occurrences (the binding plus references in the body), should explain ambiguity detection (exit code 3) and how to narrow the old-string to be more specific.",
       "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I asked clj-replace to replace `(defn parse-port [s] (Integer/parseInt s))` with `(defn parse-port [s] (parse-long s))` in config.clj. It exited 4 and printed the form `(defn ^:private parse-port\\n  [s]\\n  (Integer/parseInt s))` with a message about a near match. How do I finish the change?",
+      "expected_output": "Should recognise exit 4 as a near match: the file's form has the same value but is written differently (here the ^:private metadata and line breaks). Should retry clj-replace with the printed text as old-string, and keep ^:private in new-string, e.g. `(defn ^:private parse-port\\n  [s]\\n  (parse-long s))`. Should not drop the metadata or fall back to rewriting the file.",
+      "files": [
+        "exit4/scenarios.edn"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "clj-replace exited 4 when I tried to change `(defn total \"Sum of item prices.\" [items] (reduce + (map :price items)))` to use transduce; it printed the file's `total`, which has a `;; prices are stored in cents` comment inside. What should I do?",
+      "expected_output": "Should retry with the printed text (including the comment) as old-string, and keep the comment in new-string while changing the body to `(transduce (map :price) + items)`. Should explain that comments inside a form are compared, so leaving one out is a near match (exit 4), not a match.",
+      "files": [
+        "exit4/scenarios.edn"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I tried `clj-replace config.clj '{:host \"localhost\" :port 8080 :join? false}' '{:host \"0.0.0.0\" :port 8080 :join? false}'` and got exit 4. The file has the same map written `{:port 8080 :host \"localhost\" :join? false}` over three lines. Why didn't it match, and how do I make the change?",
+      "expected_output": "Should explain that clj-replace ignores layout only, and map key order is part of how the code is written, so a different order is a near match (exit 4). Should retry with the file's text as old-string and change only the host, keeping the file's key order and layout.",
+      "files": [
+        "exit4/scenarios.edn"
+      ]
     }
   ]
 }
