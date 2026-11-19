@@ -1,14 +1,16 @@
 #!/usr/bin/env bb
 ;; Performance guard for clj-replace.bb.
 ;;
-;; Usage: bb bench [--baseline <script>] [--runs N] [--max-slowdown X]
+;; Usage: bb bench [--baseline <script>] [--runs N] [--max-slowdown X] [--min-diff-ms M]
 ;;        (from the repository root; or bb skills/clj-replace/test/bench.bb ...)
 ;;
 ;; Generates its fixtures, runs each scenario --runs times (median wall
 ;; time) and fails when:
 ;;   - with --baseline: the script under test is more than --max-slowdown
-;;     times slower than the baseline on some scenario (both run on the same
-;;     machine, interleaved, so machine speed cancels out);
+;;     times slower than the baseline on some scenario and at least
+;;     --min-diff-ms slower in absolute terms (both run on the same machine,
+;;     interleaved in alternating order, so machine speed cancels out; the
+;;     absolute floor keeps startup-sized noise from failing a run);
 ;;   - scaling: a file 4x larger takes more than 8x longer (no match), or
 ;;     matching the first of 20 forms nested 300 deep takes more than 2x as
 ;;     long as matching the first form of the large flat file. These catch
@@ -26,14 +28,35 @@
 (def script (or (System/getenv "CLJ_REPLACE_SCRIPT")
                 (str (fs/path (fs/parent (fs/absolutize *file*)) ".." "scripts" "clj-replace.bb"))))
 
+(defn usage-error [msg]
+  (println (str "bench: " msg))
+  (println "usage: bb bench [--baseline <script>] [--runs N] [--max-slowdown X] [--min-diff-ms M]")
+  (System/exit 1))
+
+(def number-options
+  {"--runs" [:runs parse-long]
+   "--max-slowdown" [:max-slowdown parse-double]
+   "--min-diff-ms" [:min-diff-ms parse-double]})
+
 (defn parse-args [args]
-  (loop [[a b & more :as args] args opts {:runs 7 :max-slowdown 1.3}]
+  (loop [[a b & more :as args] args
+         opts {:runs 7 :max-slowdown 1.3 :min-diff-ms 20.0}]
     (cond
       (empty? args) opts
-      (= a "--baseline") (recur more (assoc opts :baseline b))
-      (= a "--runs") (recur more (assoc opts :runs (parse-long b)))
-      (= a "--max-slowdown") (recur more (assoc opts :max-slowdown (parse-double b)))
-      :else (do (println "unknown argument:" a) (System/exit 1)))))
+
+      (= a "--baseline")
+      (if b
+        (recur more (assoc opts :baseline b))
+        (usage-error "--baseline needs a path"))
+
+      (number-options a)
+      (let [[k parse] (number-options a)
+            v (some-> b parse)]
+        (if v
+          (recur more (assoc opts k v))
+          (usage-error (str a " needs a number"))))
+
+      :else (usage-error (str "unknown argument: " a)))))
 
 ;; ---------------------------------------------------------------- fixtures
 
@@ -65,7 +88,7 @@
 
 (defn time-run
   "Wall time in ms of one run on a fresh copy of file."
-  [tmp script {:keys [file old]}]
+  [tmp script {:keys [id file old]}]
   (let [copy (str (fs/path tmp "work.clj"))]
     (fs/copy file copy {:replace-existing true})
     (let [start (System/nanoTime)
@@ -73,8 +96,9 @@
                                              "bb" script copy old "(done)")
           ms (/ (- (System/nanoTime) start) 1e6)]
       (when-not (#{0 2} exit)
-        (println "unexpected exit" exit "for" script (:file old) (str out err))
-        (System/exit 1))
+        (throw (ex-info (str "unexpected exit " exit " in scenario " (name id)
+                             " (" file ") from " script "\n" out err)
+                        {})))
       ms)))
 
 (defn median [xs]
@@ -82,20 +106,23 @@
     (v (quot (count v) 2))))
 
 (defn measure
-  "{scenario-id {:new ms :base ms}}, runs interleaved."
+  "[[scenario-id {:new ms :base ms}] ...] in scenario order. With a
+  baseline, each iteration runs both scripts, alternating which goes first."
   [tmp scs runs baseline]
-  (into {}
-        (for [sc scs]
-          (let [pairs (doall (for [_ (range runs)]
-                               [(time-run tmp script sc)
-                                (when baseline (time-run tmp baseline sc))]))]
-            [(:id sc) {:new (median (map first pairs))
-                       :base (when baseline (median (map second pairs)))}]))))
+  (vec
+   (for [sc scs]
+     (let [pairs (vec (for [i (range runs)]
+                        (if (and baseline (odd? i))
+                          (let [b (time-run tmp baseline sc)] [(time-run tmp script sc) b])
+                          [(time-run tmp script sc) (when baseline (time-run tmp baseline sc))])))]
+       [(:id sc) {:new (median (map first pairs))
+                  :base (when baseline (median (map second pairs)))}]))))
 
 ;; ---------------------------------------------------------------- checks
 
-(defn check [results {:keys [baseline max-slowdown]}]
-  (let [t (fn [id] (get-in results [id :new]))
+(defn check [results {:keys [baseline max-slowdown min-diff-ms]}]
+  (let [by-id (into {} results)
+        t (fn [id] (get-in by-id [id :new]))
         startup (t :tiny)
         net (fn [id] (max 1.0 (- (t id) startup)))
         size-ratio (/ (net :large-no-match) (net :small-no-match))
@@ -104,7 +131,7 @@
      (when baseline
        (for [[id {:keys [new base]}] results
              :let [r (/ new base)]
-             :when (> r max-slowdown)]
+             :when (and (> r max-slowdown) (> (- new base) min-diff-ms))]
          (format "%s: %.0f ms vs baseline %.0f ms (%.2fx > %.2fx)" (name id) new base r max-slowdown)))
      (when (> size-ratio 8.0)
        [(format "scaling: 4x larger file took %.1fx longer (limit 8x)" size-ratio)])
@@ -112,10 +139,17 @@
        [(format "scaling: matching in the deeply nested file took %.1fx the large flat file (limit 2x)" deep-ratio)]))))
 
 (let [{:keys [baseline runs] :as opts} (parse-args *command-line-args*)
+      _ (when-not (pos? runs) (usage-error "--runs must be at least 1"))
       tmp (fs/create-temp-dir {:prefix "clj-replace-bench"})
-      results (measure tmp (scenarios (write-fixtures tmp)) runs baseline)
+      results (try
+                (measure tmp (scenarios (write-fixtures tmp)) runs baseline)
+                (catch clojure.lang.ExceptionInfo e
+                  (println (ex-message e))
+                  ::failed)
+                ;; System/exit skips finally, so exit only after this.
+                (finally (fs/delete-tree tmp)))
+      _ (when (= ::failed results) (System/exit 1))
       problems (check results opts)]
-  (fs/delete-tree tmp)
   (println (format "%-18s %10s %10s %8s" "scenario" "ms" "baseline" "ratio"))
   (doseq [[id {:keys [new base]}] results]
     (println (format "%-18s %10.0f %10s %8s" (name id) new

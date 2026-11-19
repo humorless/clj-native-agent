@@ -8,13 +8,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: clj-replace-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: bb test and lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: DeLaGuardo/setup-clojure@13.7.0
+        with:
+          persist-credentials: false
+      # DeLaGuardo/setup-clojure 13.7.0, pinned by commit
+      - uses: DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74
         with:
           bb: 1.12.216
           clj-kondo: 2024.09.27
@@ -26,6 +34,7 @@ jobs:
             ~/.m2/repository
             ~/.deps.clj
           key: deps-${{ hashFiles('skills/clj-replace/scripts/*.bb') }}
+          restore-keys: deps-
       - run: bb lint
       - run: bb test
 
@@ -33,11 +42,14 @@ jobs:
     name: performance guard
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: DeLaGuardo/setup-clojure@13.7.0
+          persist-credentials: false
+      # DeLaGuardo/setup-clojure 13.7.0, pinned by commit
+      - uses: DeLaGuardo/setup-clojure@6d46099eae24853c33c0482f2bb54edf4f1a4c74
         with:
           bb: 1.12.216
       - name: Cache dependencies fetched by add-deps
@@ -47,13 +59,17 @@ jobs:
             ~/.m2/repository
             ~/.deps.clj
           key: deps-${{ hashFiles('skills/clj-replace/scripts/*.bb') }}
+          restore-keys: deps-
       - name: Compare with the base branch's script
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
+          nproc && lscpu | head -n 15
           script=skills/clj-replace/scripts/clj-replace.bb
           baseline="$RUNNER_TEMP/baseline.bb"
-          if git show "origin/$BASE_REF:$script" > "$baseline"; then
+          git rev-parse --verify "origin/$BASE_REF" > /dev/null
+          if git cat-file -e "origin/$BASE_REF:$script" 2> /dev/null; then
+            git show "origin/$BASE_REF:$script" > "$baseline"
             bb bench --baseline "$baseline"
           else
             echo "No $script on $BASE_REF: scaling checks only."
